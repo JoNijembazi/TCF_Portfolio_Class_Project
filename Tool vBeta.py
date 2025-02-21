@@ -134,4 +134,13 @@ matrix = px.imshow(corr_matrix.round(2),
 matrix.show()
 
 # Portfolio Optimization
-    # Assets  
+    # Asset Weights
+weights = np.array(prtu['Weight'])
+
+    # Portfolio Returns
+def portfolio_return(weights, mean_returns):
+    return np.sum(weights * mean_returns) 
+
+    # Portfolio Volatility
+def portfolio_volatility(weights, cov_matrix):
+    return np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))   
