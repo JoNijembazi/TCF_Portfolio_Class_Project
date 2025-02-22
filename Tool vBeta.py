@@ -196,28 +196,32 @@ weights = np.array(prtu['Weight'].iloc[:-2])
     # Functions
 
         # Portfolio Returns 
-def portfolio_return(weights, mean_returns):
+def portfolio_mean_return(weights):
     return np.sum(weights * mean_returns)
+
+def portfolio_ann_return(weights):
+    return np.sum(weights * annualized_returns)
+
 
         # Portfolio Volatility 
 def portfolio_volatility(weights, cov_matrix):
     return np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
 
     # Sector Constraints
-Sector_constraint = { 'Communication Services': (0.05, 0.15),
-                      'Consumer Discretionary': (0.05, 0.15), 
-                      'Consumer Staples': (0.05, 0.15), 
-                      'Energy': (0.05, 0.15), 
-                      'Financials Services': (0.05, 0.15), 
-                      'Health Care': (0.05, 0.15), 
-                      'Industrials': (0.05, 0.15), 
-                      'Information Technology': (0.05, 0.15), 
-                      'Materials': (0.05, 0.15), 
-                      'Real Estate': (0.05, 0.15), 
-                      'Utilities': (0.25, 0.15)
+IPS_Sector_constraint = {'Communication Services': (0, 0.165),
+                      'Consumer Discretionary': (0, 0.173), 
+                      'Consumer Staples': (0, 0.154), 
+                      'Energy': (0, 0.154), 
+                      'Financials Services': (0.163, 0.363), 
+                      'Health Care': (0, 0.16), 
+                      'Industrials': (0.08, 0.208), 
+                      'Information Technology': (0.113, 0.313), 
+                      'Materials': (0, 0.166), 
+                      'Real Estate': (0, 0.116), 
+                      'Utilities': (0, 0.131)
                       }
 
-Sector_weights = sum([prtu.loc[prtu['Sector']==i,'Weight'] for i in Sector_constraint.keys()],())
+Sector_weights = [prtu.loc[prtu['Sector']==i,'Weight'].sum() for i in IPS_Sector_constraint.keys()]
 print(Sector_weights)
 
 def check_sum(weights):
@@ -238,7 +242,7 @@ for p in range(10000):
   weights /= np.sum(weights)
   
   # Lists are mutable so growing will not be memory inefficient
-  list_portfolio_returns.append(portfolio_return(weights, mean_returns.iloc[:-2]))
+  list_portfolio_returns.append(portfolio_ann_return(weights, mean_returns.iloc[:-2]))
   list_portfolio_sd.append(portfolio_volatility(weights,cov_matrix))
   
   # Convert list to numpy arrays
@@ -249,7 +253,6 @@ for p in range(10000):
 fig = px.scatter(x=port_sd, y=port_returns, title='Portfolio Returns vs. Volatility', trendline='ols')
 fig.update_layout(xaxis_title='Portfolio Volatility (%)',yaxis_title='Portfolio Returns (%)')
 fig.show()
-
 
 # Histogram of Portfolio Returns
 fig = px.histogram(x=port_returns, marginal='box',nbins=50, title='Portfolio Returns')
@@ -267,5 +270,3 @@ def sharpe_ratio(weights, mean_returns, cov_matrix, risk_free_rate):
     p_ret = portfolio_return(weights, mean_returns)
     p_vol = portfolio_volatility(weights, cov_matrix)
     return (p_ret - risk_free_rate) / p_vol
-
-# Portfolio Optimization
