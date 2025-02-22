@@ -29,13 +29,13 @@ prtu.reset_index(drop=True,inplace=True)
 prtu['Country'] = 'n.a'
 for i in range(len(prtu[:-2])):
     if 'US' in prtu['Security'][i]:
-        prtu['Country'][i] = 'United States'
+        prtu.loc[i,'Country'] = 'United States'
     else:
-        prtu['Country'][i] = 'Canada'
+        prtu.loc[i,'Country'] = 'Canada'
 
 # Portfolio Analysis
     # Prepare Equity List
-eq_list = prtu['Security'][:-2].tolist()
+eq_list = prtu['Security'].iloc[:-2].tolist()
 eq_list = [x.replace('-U CN','-UN.TO') for x in eq_list]
 eq_list = [x.replace(' CN','.TO') for x in eq_list]
 eq_list = [x.replace(' US','') for x in eq_list]
@@ -66,7 +66,7 @@ for x in eq_list:
     
     # Remove missing/delisted stocks
 eq_list = df.columns[~df.isna().all()]  
-df.columns = prtu['Security'][:-2].tolist()
+df.columns = prtu['Security'].iloc[:-2].tolist()
 drop_cols = df.columns[df.isna().all()]
 df.drop(drop_cols,axis=1,inplace=True)
 prtu = prtu[~prtu['Security'].isin(drop_cols)]
@@ -129,13 +129,19 @@ prtu['Market Value'] = prtu['Price'] * prtu['Position']
 prtu['Market Value (CAD)'] = prtu['Market Value']
 
 for i in prtu.index:
-    if prtu['Country'][i] == 'United States':
-        prtu['Market Value (CAD)'][i] = prtu['Price'][i] * prtu['Position'][i] * usd_cad
+    if prtu.loc[i, 'Country'] == 'United States':
+        prtu.loc[i, 'Market Value (CAD)'] = prtu.loc[i, 'Price'] * prtu.loc[i, 'Position'] * usd_cad 
+    if prtu.loc[i, 'Security'] == 'CAD':
+        prtu.loc[i, 'Market Value (CAD)'] = prtu.loc[i, 'Position'] * 1000
     else:
         continue 
 
         # # Weight
 prtu['Weight'] = prtu['Market Value (CAD)'] / prtu['Market Value (CAD)'].sum()
+
+
+
+# Portfolio Optimization
 
     # Calculate Expected Returns
         # # Returns
@@ -168,6 +174,7 @@ fig.show()
 
 # Add logs (As per log returns)
 
+
     # Calculate Covariance & Correlation Matrix
 cov_matrix = daily_returns.cov() * 253
 corr_matrix = daily_returns.corr()
@@ -183,9 +190,8 @@ matrix = px.imshow(corr_matrix.round(2),
             )
 matrix.show()
 
-# Portfolio Optimization
     # Asset Weights
-weights = np.array(prtu['Weight'][:-2])
+weights = np.array(prtu['Weight'].iloc[:-2])
 
     # Functions
 
@@ -208,8 +214,11 @@ Sector_constraint = { 'Communication Services': (0.05, 0.15),
                       'Information Technology': (0.05, 0.15), 
                       'Materials': (0.05, 0.15), 
                       'Real Estate': (0.05, 0.15), 
-                      'Utilities': (0.05, 0.15)
+                      'Utilities': (0.25, 0.15)
                       }
+
+Sector_weights = sum([prtu.loc[prtu['Sector']==i,'Weight'] for i in Sector_constraint.keys()],())
+print(Sector_weights)
 
 def check_sum(weights):
     return ()
@@ -218,10 +227,10 @@ list_portfolio_returns = []
 list_portfolio_sd = []
 
 # simulate 5000 random weight vectors (numpy array objects)
-for p in range(5000):
+for p in range(10000):
   # Return random floats in the half-open interval [0.0, 1.0)
   
-  weights = np.random.random(size = len(prtu['Security'][:-2]))
+  weights = np.random.random(size = len(prtu['Security'].iloc[:-2]))
   
   # Normalize to unity
   
@@ -229,9 +238,34 @@ for p in range(5000):
   weights /= np.sum(weights)
   
   # Lists are mutable so growing will not be memory inefficient
-  list_portfolio_returns.append(portfolio_return(weights))
-  list_portfolio_sd.append(portfolio_volatility(weights))
+  list_portfolio_returns.append(portfolio_return(weights, mean_returns.iloc[:-2]))
+  list_portfolio_sd.append(portfolio_volatility(weights,cov_matrix))
   
   # Convert list to numpy arrays
   port_returns = np.array(list_portfolio_returns)
   port_sd = np.array(list_portfolio_sd)
+
+# Scatter Plot of Portfolio Returns vs. Volatility
+fig = px.scatter(x=port_sd, y=port_returns, title='Portfolio Returns vs. Volatility', trendline='ols')
+fig.update_layout(xaxis_title='Portfolio Volatility (%)',yaxis_title='Portfolio Returns (%)')
+fig.show()
+
+
+# Histogram of Portfolio Returns
+fig = px.histogram(x=port_returns, marginal='box',nbins=50, title='Portfolio Returns')
+fig.update_layout(xaxis_title='Portfolio Returns (%)',yaxis_title='Frequency')
+fig.show()
+
+# Histogram of Portfolio Volatility
+fig = px.histogram(x=port_sd, marginal='box',nbins=50, title='Portfolio Volatility')
+fig.update_layout(xaxis_title='Portfolio Volatility (%)',yaxis_title='Frequency')
+fig.show()
+
+risk_free_rate = yf.download('^TNX',period='1d')['Close'].iloc[-1] / 100
+
+def sharpe_ratio(weights, mean_returns, cov_matrix, risk_free_rate):
+    p_ret = portfolio_return(weights, mean_returns)
+    p_vol = portfolio_volatility(weights, cov_matrix)
+    return (p_ret - risk_free_rate) / p_vol
+
+# Portfolio Optimization
