@@ -27,6 +27,7 @@ prtu.reset_index(drop=True,inplace=True)
 
     # Regions
 prtu['Country'] = 'n.a'
+
 for i in range(len(prtu[:-2])):
     if 'US' in prtu['Security'][i]:
         prtu.loc[i,'Country'] = 'United States'
@@ -41,7 +42,6 @@ eq_list = [x.replace(' CN','.TO') for x in eq_list]
 eq_list = [x.replace(' US','') for x in eq_list]
 
     # Download finance data
-prtu[['Sector','Trailing P/E','1Y Forward P/E','Consensus Target']] = 'n.a'
 df = pd.DataFrame()
 final_eq_list = []
 for x in eq_list:  
@@ -57,6 +57,7 @@ for x in eq_list:
         try:
             # Check if the ticker is valid 
             yf.Ticker(x.replace('.TO','.V')).info['exchange']    
+
             # Download the stock data
             stock = yf.download(x.replace('.TO','.V'), period='5y', interval='1d',repair=True,progress=False)['Close'];
             df = pd.concat([df,stock],axis=1)
@@ -73,19 +74,16 @@ prtu = prtu[~prtu['Security'].isin(drop_cols)]
 
 
     # Add Descriptive Data
-    # Reprepare Equity List 
-
-
+prtu[['Sector','Trailing P/E','1Y Forward P/E','Consensus Target']] = 'n.a'
+prtu['Type'] = 'Cash'
 for x,y in zip(eq_list,prtu['Security'].iloc[:-2]):        
     try:
-        
+        # Check type 
         ticker_info = yf.Ticker(x).info
-        print('Security:', x, ticker_info.get('sectorDisp', 'n.a'))
+        prtu.loc[prtu['Security']==y,'Type'] = 'Stock'
         try:
-        # print('Security:', pd.Series(yf.Ticker(x).funds_data.sector_weightings).idxmax())
-                                            #  
-                                            #  ))
             etf_sector = pd.Series(yf.Ticker(x).funds_data.sector_weightings).idxmax()
+            prtu.loc[prtu['Security']==y,'Type'] = 'ETF'
         except:
             pass 
         # Sector
@@ -112,9 +110,18 @@ sector_codes = {'realestate': 'Real Estate',
                 'energy': 'Energy', 
                 'healthcare': 'Healthcare'}
 
+normalized_codes = { 
+                'Consumer Cyclical': 'Consumer Discretionary', 
+                'Basic Materials': 'Materials', 
+                'Consumer Defensive': 'Consumer Staples', 
+                'Technology': 'Information Technology', 
+                }
+
 for i in sector_codes.keys():
     prtu.loc[prtu['Sector']==i,'Sector'] = sector_codes[i]
 
+for i in normalized_codes.keys():
+    prtu.loc[prtu['Sector']==i,'Sector'] = normalized_codes[i]
 
         # # Last Price
 last_price = df.iloc[-1]
@@ -132,7 +139,11 @@ for i in prtu.index:
     if prtu.loc[i, 'Country'] == 'United States':
         prtu.loc[i, 'Market Value (CAD)'] = prtu.loc[i, 'Price'] * prtu.loc[i, 'Position'] * usd_cad 
     if prtu.loc[i, 'Security'] == 'CAD':
+        prtu.loc[i, 'Market Value'] = prtu.loc[i, 'Position'] * 1000
         prtu.loc[i, 'Market Value (CAD)'] = prtu.loc[i, 'Position'] * 1000
+    if prtu.loc[i, 'Security'] == 'USD':
+        prtu.loc[i, 'Market Value'] = prtu.loc[i, 'Position'] * 1000
+        prtu.loc[i, 'Market Value (CAD)'] = prtu.loc[i, 'Market Value'] * usd_cad
     else:
         continue 
 
@@ -193,6 +204,8 @@ matrix.show()
     # Asset Weights
 weights = np.array(prtu['Weight'].iloc[:-2])
 
+    # ETF Data
+etfs = prtu.loc[prtu['Type']=='ETF']
     # Functions
 
         # Portfolio Returns 
@@ -200,7 +213,7 @@ def portfolio_mean_return(weights):
     return np.sum(weights * mean_returns)
 
 def portfolio_ann_return(weights):
-    return np.sum(weights * annualized_returns)
+    return np.sum(weights * annualized_returns[:-2])
 
 
         # Portfolio Volatility 
@@ -221,38 +234,48 @@ IPS_Sector_constraint = {'Communication Services': (0, 0.165),
                       'Utilities': (0, 0.131)
                       }
 
-Sector_weights = [prtu.loc[prtu['Sector']==i,'Weight'].sum() for i in IPS_Sector_constraint.keys()]
-print(Sector_weights)
+
+
+GICs = prtu['Sector'].iloc[:-2].unique()
+Sector_weights = pd.Series([float(prtu.loc[prtu['Sector']==i,'Weight'].sum()) for i in GICs],index= GICs,dtype='float64').to_numpy()
+portfolio_weights = np.array(prtu['Weight'].iloc[:-2])[:, np.newaxis]
+ETF_weights = pd.Series([float(etfs.loc[etfs['Sector']==i,'Weight'].sum()) for i in GICs],index= GICs,dtype='float64').to_numpy()
+
 
 def check_sum(weights):
     return ()
 
-list_portfolio_returns = []
-list_portfolio_sd = []
 
-# simulate 5000 random weight vectors (numpy array objects)
-for p in range(10000):
-  # Return random floats in the half-open interval [0.0, 1.0)
-  
-  weights = np.random.random(size = len(prtu['Security'].iloc[:-2]))
-  
-  # Normalize to unity
-  
-  # The /= operator divides the array by the sum of the array and rebinds "weights" to the new object
-  weights /= np.sum(weights)
-  
-  # Lists are mutable so growing will not be memory inefficient
-  list_portfolio_returns.append(portfolio_ann_return(weights, mean_returns.iloc[:-2]))
-  list_portfolio_sd.append(portfolio_volatility(weights,cov_matrix))
-  
-  # Convert list to numpy arrays
-  port_returns = np.array(list_portfolio_returns)
-  port_sd = np.array(list_portfolio_sd)
+    # Generate random weights
+weights = np.random.random(size=(10000, len(portfolio_weights)))
+# Normalize weights to unity
+weights /= np.sum(weights, axis=1)[:, np.newaxis]
 
+# Calculate portfolio returns and standard deviations 
+    # (Utilized Element wise operations to speed up operation processs)
+port_returns = np.sum(weights * np.array(annualized_returns[:-2].values), axis=1)
+port_sd = np.sqrt(np.einsum('ij,jk,ik->i', weights, cov_matrix, weights))
+
+print(port_returns.min())
 # Scatter Plot of Portfolio Returns vs. Volatility
 fig = px.scatter(x=port_sd, y=port_returns, title='Portfolio Returns vs. Volatility', trendline='ols')
-fig.update_layout(xaxis_title='Portfolio Volatility (%)',yaxis_title='Portfolio Returns (%)')
+fig.update_layout(xaxis_title='Portfolio Volatility (%)',
+                  yaxis_title='Portfolio Returns (%)')
+fig.update_traces(marker=dict(size=2),
+                  selector=dict(mode='markers'),
+                  opacity=0.5)
+
+# fig.add_scatter(x=
+
+# )
+
 fig.show()
+
+target =  np.linspace(
+    start=port_returns.min(),
+    stop=port_returns.max(),
+    num=1000
+            )
 
 # Histogram of Portfolio Returns
 fig = px.histogram(x=port_returns, marginal='box',nbins=50, title='Portfolio Returns')
@@ -267,6 +290,6 @@ fig.show()
 risk_free_rate = yf.download('^TNX',period='1d')['Close'].iloc[-1] / 100
 
 def sharpe_ratio(weights, mean_returns, cov_matrix, risk_free_rate):
-    p_ret = portfolio_return(weights, mean_returns)
+    p_ret = portfolio_ann_return(weights, mean_returns)
     p_vol = portfolio_volatility(weights, cov_matrix)
     return (p_ret - risk_free_rate) / p_vol
