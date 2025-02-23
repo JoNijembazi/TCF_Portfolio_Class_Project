@@ -210,14 +210,14 @@ etfs = prtu.loc[prtu['Type']=='ETF']
 
         # Portfolio Returns 
 def portfolio_mean_return(weights):
-    return np.sum(weights * mean_returns)
+    return np.sum(weights * mean_returns[:-2])
 
 def portfolio_ann_return(weights):
     return np.sum(weights * annualized_returns[:-2])
 
 
         # Portfolio Volatility 
-def portfolio_volatility(weights, cov_matrix):
+def portfolio_volatility(weights):
     return np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
 
     # Sector Constraints
@@ -241,6 +241,8 @@ Sector_weights = pd.Series([float(prtu.loc[prtu['Sector']==i,'Weight'].sum()) fo
 portfolio_weights = np.array(prtu['Weight'].iloc[:-2])[:, np.newaxis]
 ETF_weights = pd.Series([float(etfs.loc[etfs['Sector']==i,'Weight'].sum()) for i in GICs],index= GICs,dtype='float64').to_numpy()
 
+# Risk Free Rate (10-Year US Treasury)
+risk_free_rate = yf.download('^TNX',period='1d')['Close'].iloc[-1] / 100
 
 def check_sum(weights):
     return ()
@@ -256,38 +258,72 @@ weights /= np.sum(weights, axis=1)[:, np.newaxis]
 port_returns = np.sum(weights * np.array(annualized_returns[:-2].values), axis=1)
 port_sd = np.sqrt(np.einsum('ij,jk,ik->i', weights, cov_matrix, weights))
 
-print(port_returns.min())
-# Scatter Plot of Portfolio Returns vs. Volatility
-fig = px.scatter(x=port_sd, y=port_returns, title='Portfolio Returns vs. Volatility', trendline='ols')
+
+#Visualize Target Portfolios & Frontier 
+target =  np.linspace(
+    start=port_sd.min(),
+    stop=port_sd.max(),
+    num=100
+            )
+
+size_constraints = tuple((0,0.1) for w in portfolio_weights)
+
+constraints = (
+  {'type': 'eq', 'fun': lambda x: portfolio_mean_return(x) - target},
+  {'type': 'eq', 'fun': lambda x: np.sum(x) - 1}
+)
+
+    # instantiate empty container for the objective values to be minimized
+obj_sd = []
+obj_weight =[]
+    # For loop to minimize objective function
+print(np.array(portfolio_weights))
+for target in target:
+  min_result_object = sco.minimize(
+    # Objective function
+    fun = portfolio_volatility,
+    # Initial guess, which is the equal weight array
+    x0 = np.array(portfolio_weights).flatten(),
+    method = 'SLSQP',
+    bounds = size_constraints,
+    constraints = constraints
+    ) 
+  # Extract the objective value and append it to the output container
+  obj_sd.append(min_result_object['fun'])
+  obj_weight.append(min_result_object['x'])
+
+
+# Scatter Plot of Mean-Variance Line & Portfolios
+
+fig = px.scatter(pd.DataFrame({'Volatility': obj_sd, 'Returns': target}), x='Volatility', y='Returns', title='Portfolio Returns vs. Volatility')
 fig.update_layout(xaxis_title='Portfolio Volatility (%)',
                   yaxis_title='Portfolio Returns (%)')
-fig.update_traces(marker=dict(size=2),
-                  selector=dict(mode='markers'),
-                  opacity=0.5)
+# fig.update_traces(marker=dict(size=2),
+#                   selector=dict(mode='markers'),
+#                   opacity=0.5)
 
-# fig.add_scatter(x=
-
-# )
+# fig.add_scatter(x=port_sd,
+#                 y=port_returns,
+#                 )
 
 fig.show()
 
 target =  np.linspace(
-    start=port_returns.min(),
-    stop=port_returns.max(),
-    num=1000
+    start=port_sd.min(),
+    stop=port_sd.max(),
+    num=100
             )
-
 # Histogram of Portfolio Returns
-fig = px.histogram(x=port_returns, marginal='box',nbins=50, title='Portfolio Returns')
-fig.update_layout(xaxis_title='Portfolio Returns (%)',yaxis_title='Frequency')
-fig.show()
+# fig = px.histogram(x=port_returns, marginal='box',nbins=50, title='Portfolio Returns')
+# fig.update_layout(xaxis_title='Portfolio Returns (%)',yaxis_title='Frequency')
+# fig.show()
 
 # Histogram of Portfolio Volatility
-fig = px.histogram(x=port_sd, marginal='box',nbins=50, title='Portfolio Volatility')
-fig.update_layout(xaxis_title='Portfolio Volatility (%)',yaxis_title='Frequency')
-fig.show()
+# fig = px.histogram(x=port_sd, marginal='box',nbins=50, title='Portfolio Volatility')
+# fig.update_layout(xaxis_title='Portfolio Volatility (%)',yaxis_title='Frequency')
+# fig.show()
 
-risk_free_rate = yf.download('^TNX',period='1d')['Close'].iloc[-1] / 100
+
 
 def sharpe_ratio(weights, mean_returns, cov_matrix, risk_free_rate):
     p_ret = portfolio_ann_return(weights, mean_returns)
