@@ -217,10 +217,15 @@ def portfolio_mean_return(weights):
 def portfolio_ann_return(weights):
     return np.sum(weights * annualized_returns[:-2])
 
-
         # Portfolio Volatility 
 def portfolio_volatility(weights):
     return np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
+
+def sharpe_ratio(weights):
+    p_ret = portfolio_ann_return(weights)
+    p_vol = portfolio_volatility(weights)
+    sharpe = (p_ret - risk_free_rate*100) / p_vol
+    return sharpe
 
     # Sector Constraints
 IPS_Sector_constraint = {'Communication Services': (0, 0.165),
@@ -244,11 +249,7 @@ portfolio_weights = np.array(prtu['Weight'].iloc[:-2])[:, np.newaxis]
 ETF_weights = pd.Series([float(etfs.loc[etfs['Sector']==i,'Weight'].sum()) for i in GICs],index= GICs,dtype='float64').to_numpy()
 
 # Risk Free Rate (10-Year US Treasury)
-risk_free_rate = yf.download('^TNX',period='1d')['Close'].iloc[-1] / 100
-
-def check_sum(weights):
-    return ()
-
+risk_free_rate = yf.download('^TNX',period='1d',progress=False)['Close'].iloc[-1] / 100
 
     # Generate random weights
 weights = np.random.random(size=(10000, len(portfolio_weights)))
@@ -256,36 +257,34 @@ weights = np.random.random(size=(10000, len(portfolio_weights)))
 weights /= np.sum(weights, axis=1)[:, np.newaxis]
 
 # Calculate portfolio returns and standard deviations 
-    # (Utilized Element wise operations to speed up operation processs)
+    # (Utilized Element-wise operations and einsum to speed up operation processs)
 port_returns = np.sum(weights * np.array(annualized_returns[:-2].values), axis=1)
 port_sd = np.sqrt(np.einsum('ij,jk,ik->i', weights, cov_matrix, weights))
 
 
-#Visualize Target Portfolios & Frontier 
+# Visualize Target Portfolios & Frontier 
 target =  np.linspace(
     start=annualized_returns.min(),
     stop=annualized_returns.max(),
     num=200
             )
 
-
 size_constraints = tuple((0,0.1) for w in portfolio_weights)
 
 # Define the constraints function
 def constraints_func(target):
     return (
-        {'type': 'eq', 'fun': lambda x: portfolio_mean_return(x) - target},
-        {'type': 'eq', 'fun': lambda x: np.sum(x) - 1}
+        {'type': 'eq', 'fun': lambda x: portfolio_ann_return(x) - target},
+        {'type': 'eq', 'fun': lambda x: np.sum(x) - 1},
     )
-
 # Define the minimization function
-def minimize_for_target(target, initial_guess):
+def minimize_for_target(target, initial_w):
     min_result_object = sco.minimize(
         fun=portfolio_volatility,
-        x0=initial_guess,
+        x0=initial_w,
         method='SLSQP',
         bounds=size_constraints,
-        constraints=constraints_func(target)
+        constraints=constraints_func(target=target)
     )
     return min_result_object['fun']*100, min_result_object['x']*100
 
@@ -303,22 +302,23 @@ fig.add_trace(go.Scatter(x=obj_sd,
                          y=target, 
                          mode='lines',
                          name='Efficient Frontier',
-                         customdata=[prtu['Security'],prtu['Type'],prtu['Country']],
+                        #  customdata=prtu[['Security','Type','Country']],
                          hovertemplate="Return:%{x}%<br>Standard Deviation: %{y}%")
                          )
 
 fig.update_layout(xaxis_title='Portfolio Volatility (%)',
-                  yaxis_title='Portfolio Returns (%)')
+                  yaxis_title='Portfolio Returns (%)',hovermode ='closest')
 
 fig.add_trace(go.Scatter(x=prtu['Annualized Volatility'],
                 y=prtu['Annualized Returns'],
                 mode='markers',
                 name='Assets',
-                hovertemplate= "<b>%{customdata[1]}</b><br>"+
-                "<b>%{customdata[2]}</b><br>" + 
-                "<b>%{customdata[3]}</b><br><br>" +
-                "Return:% {x}%"+ 
-                "<br>Standard Deviation: %{y}%" 
+                customdata=prtu[['Security', 'Type', 'Country']].values,
+                hovertemplate= "<b>%{customdata[0]}</b><br>"+
+                "<b>%{customdata[1]}</b><br>"+
+                "<b>%{customdata[2]}</b><br><br>"+
+                "Return:%{y}%<br>"+
+                "Standard Deviation: %{x}%", 
                 ))
 
 fig.show()
@@ -328,19 +328,17 @@ target =  np.linspace(
     stop=port_sd.max(),
     num=100
             )
-# Histogram of Portfolio Returns
-# fig = px.histogram(x=port_returns, marginal='box',nbins=50, title='Portfolio Returns')
-# fig.update_layout(xaxis_title='Portfolio Returns (%)',yaxis_title='Frequency')
-# fig.show()
 
-# Histogram of Portfolio Volatility
-# fig = px.histogram(x=port_sd, marginal='box',nbins=50, title='Portfolio Volatility')
-# fig.update_layout(xaxis_title='Portfolio Volatility (%)',yaxis_title='Frequency')
-# fig.show()
+# def maximize_for_target(target, initial_w):
+#     min_result_object = sco.minimize(
+#         fun=portfolio_volatility,
+#         x0=initial_w,
+#         method='SLSQP',
+#         bounds=size_constraints,
+#         constraints=constraints_func(target=target),
+#         sign=-1
+#     )       
+#     return min_result_object['fun']*100, min_result_object['x']*100
 
-def sharpe_ratio(weights, mean_returns, cov_matrix, risk_free_rate):
-    p_ret = portfolio_ann_return(weights, mean_returns)
-    p_vol = portfolio_volatility(weights, cov_matrix)
-    return (p_ret - risk_free_rate) / p_vol
-
-
+# # Use parallel processing to minimize for each target
+# results = Parallel(n_jobs=-1)(delayed(minimize_for_target)(t, np.array(portfolio_weights).flatten()) for t in target)
