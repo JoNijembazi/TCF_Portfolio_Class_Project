@@ -11,6 +11,8 @@ import scipy.stats as stats
 from scipy.stats import norm 
 import scipy.optimize as sco
 import scipy.interpolate as sci
+from joblib import Parallel, delayed
+import plotly.graph_objects as go
 
 # Import Data
 
@@ -161,7 +163,7 @@ mean_returns = (daily_returns.mean() * 252)*100
 annualized_returns = (((1 + daily_returns).cumprod().iloc[-1]) ** (252/len(df)) - 1)*100
         
         # # Reindex & match with prtu
-annualized_returns =annualized_returns.reindex(prtu['Security'], fill_value=0)
+annualized_returns = annualized_returns.reindex(prtu['Security'], fill_value=0)
 mean_returns = mean_returns.reindex(prtu['Security'], fill_value=0)
 
 prtu['Annualized Returns'] = annualized_returns.values
@@ -261,50 +263,63 @@ port_sd = np.sqrt(np.einsum('ij,jk,ik->i', weights, cov_matrix, weights))
 
 #Visualize Target Portfolios & Frontier 
 target =  np.linspace(
-    start=port_sd.min(),
-    stop=port_sd.max(),
-    num=100
+    start=annualized_returns.min(),
+    stop=annualized_returns.max(),
+    num=200
             )
+
 
 size_constraints = tuple((0,0.1) for w in portfolio_weights)
 
-constraints = (
-  {'type': 'eq', 'fun': lambda x: portfolio_mean_return(x) - target},
-  {'type': 'eq', 'fun': lambda x: np.sum(x) - 1}
-)
+# Define the constraints function
+def constraints_func(target):
+    return (
+        {'type': 'eq', 'fun': lambda x: portfolio_mean_return(x) - target},
+        {'type': 'eq', 'fun': lambda x: np.sum(x) - 1}
+    )
 
-    # instantiate empty container for the objective values to be minimized
-obj_sd = []
-obj_weight =[]
-    # For loop to minimize objective function
-print(np.array(portfolio_weights))
-for target in target:
-  min_result_object = sco.minimize(
-    # Objective function
-    fun = portfolio_volatility,
-    # Initial guess, which is the equal weight array
-    x0 = np.array(portfolio_weights).flatten(),
-    method = 'SLSQP',
-    bounds = size_constraints,
-    constraints = constraints
-    ) 
-  # Extract the objective value and append it to the output container
-  obj_sd.append(min_result_object['fun'])
-  obj_weight.append(min_result_object['x'])
+# Define the minimization function
+def minimize_for_target(target, initial_guess):
+    min_result_object = sco.minimize(
+        fun=portfolio_volatility,
+        x0=initial_guess,
+        method='SLSQP',
+        bounds=size_constraints,
+        constraints=constraints_func(target)
+    )
+    return min_result_object['fun']*100, min_result_object['x']*100
 
+# Use parallel processing to minimize for each target
+results = Parallel(n_jobs=-1)(delayed(minimize_for_target)(t, np.array(portfolio_weights).flatten()) for t in target)
+
+# Extract the results
+obj_sd, obj_weight = zip(*results)
 
 # Scatter Plot of Mean-Variance Line & Portfolios
 
-fig = px.scatter(pd.DataFrame({'Volatility': obj_sd, 'Returns': target}), x='Volatility', y='Returns', title='Portfolio Returns vs. Volatility')
+fig = go.Figure()
+
+fig.add_trace(go.Scatter(x=obj_sd, 
+                         y=target, 
+                         mode='lines',
+                         name='Efficient Frontier',
+                         customdata=[prtu['Security'],prtu['Type'],prtu['Country']],
+                         hovertemplate="Return:%{x}%<br>Standard Deviation: %{y}%")
+                         )
+
 fig.update_layout(xaxis_title='Portfolio Volatility (%)',
                   yaxis_title='Portfolio Returns (%)')
-# fig.update_traces(marker=dict(size=2),
-#                   selector=dict(mode='markers'),
-#                   opacity=0.5)
 
-# fig.add_scatter(x=port_sd,
-#                 y=port_returns,
-#                 )
+fig.add_trace(go.Scatter(x=prtu['Annualized Volatility'],
+                y=prtu['Annualized Returns'],
+                mode='markers',
+                name='Assets',
+                hovertemplate= "<b>%{customdata[1]}</b><br>"+
+                "<b>%{customdata[2]}</b><br>" + 
+                "<b>%{customdata[3]}</b><br><br>" +
+                "Return:% {x}%"+ 
+                "<br>Standard Deviation: %{y}%" 
+                ))
 
 fig.show()
 
@@ -323,9 +338,9 @@ target =  np.linspace(
 # fig.update_layout(xaxis_title='Portfolio Volatility (%)',yaxis_title='Frequency')
 # fig.show()
 
-
-
 def sharpe_ratio(weights, mean_returns, cov_matrix, risk_free_rate):
     p_ret = portfolio_ann_return(weights, mean_returns)
     p_vol = portfolio_volatility(weights, cov_matrix)
     return (p_ret - risk_free_rate) / p_vol
+
+
