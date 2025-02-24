@@ -125,6 +125,7 @@ for i in sector_codes.keys():
 for i in normalized_codes.keys():
     prtu.loc[prtu['Sector']==i,'Sector'] = normalized_codes[i]
 
+# Quantitative Data
         # # Last Price
 last_price = df.iloc[-1]
 prtu['Price'] = last_price.reindex(prtu['Security'],fill_value=0).values    
@@ -210,23 +211,6 @@ weights = np.array(prtu['Weight'].iloc[:-2])
 etfs = prtu.loc[prtu['Type']=='ETF']
     # Functions
 
-        # Portfolio Returns 
-def portfolio_mean_return(weights):
-    return np.sum(weights * mean_returns[:-2])
-
-def portfolio_ann_return(weights):
-    return np.sum(weights * annualized_returns[:-2])
-
-        # Portfolio Volatility 
-def portfolio_volatility(weights):
-    return np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-
-def sharpe_ratio(weights):
-    p_ret = portfolio_ann_return(weights)
-    p_vol = portfolio_volatility(weights)
-    sharpe = (p_ret - risk_free_rate*100) / p_vol
-    return sharpe
-
     # Sector Constraints
 IPS_Sector_constraint = {'Communication Services': (0, 0.165),
                       'Consumer Discretionary': (0, 0.173), 
@@ -264,8 +248,8 @@ port_sd = np.sqrt(np.einsum('ij,jk,ik->i', weights, cov_matrix, weights))
 
 # Visualize Target Portfolios & Frontier 
 target =  np.linspace(
-    start=annualized_returns.min(),
-    stop=annualized_returns.max(),
+    start=10,
+    stop=ann_std[:-2].min(),
     num=200
             )
 
@@ -277,6 +261,18 @@ def constraints_func(target):
         {'type': 'eq', 'fun': lambda x: portfolio_ann_return(x) - target},
         {'type': 'eq', 'fun': lambda x: np.sum(x) - 1},
     )
+
+    # Portfolio Returns 
+def portfolio_mean_return(weights):
+    return np.sum(weights * mean_returns[:-2])
+
+def portfolio_ann_return(weights):
+    return np.sum(weights * annualized_returns[:-2])
+
+    # Portfolio Volatility 
+def portfolio_volatility(weights):
+    return np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
+
 # Define the minimization function
 def minimize_for_target(target, initial_w):
     min_result_object = sco.minimize(
@@ -302,12 +298,14 @@ fig.add_trace(go.Scatter(x=obj_sd,
                          y=target, 
                          mode='lines',
                          name='Efficient Frontier',
-                        #  customdata=prtu[['Security','Type','Country']],
-                         hovertemplate="Return:%{x}%<br>Standard Deviation: %{y}%")
+                         hovertemplate="Return:% {x}%<br>" +
+                         "Standard Deviation: %{y}%")
                          )
 
 fig.update_layout(xaxis_title='Portfolio Volatility (%)',
-                  yaxis_title='Portfolio Returns (%)',hovermode ='closest')
+                  yaxis_title='Portfolio Returns (%)',
+                  title = 'Efficient Frontier vs Assets',
+                  hovermode ='closest')
 
 fig.add_trace(go.Scatter(x=prtu['Annualized Volatility'],
                 y=prtu['Annualized Returns'],
@@ -323,22 +321,11 @@ fig.add_trace(go.Scatter(x=prtu['Annualized Volatility'],
 
 fig.show()
 
-target =  np.linspace(
-    start=port_sd.min(),
-    stop=port_sd.max(),
-    num=100
-            )
+# Define Sharpe Ratio Function
+def sharpe_ratio(input):
+    p_ret = portfolio_ann_return(input[1])
+    p_vol = input[0]
+    sharpe = (p_ret - risk_free_rate*100) / p_vol
+    return sharpe
 
-# def maximize_for_target(target, initial_w):
-#     min_result_object = sco.minimize(
-#         fun=portfolio_volatility,
-#         x0=initial_w,
-#         method='SLSQP',
-#         bounds=size_constraints,
-#         constraints=constraints_func(target=target),
-#         sign=-1
-#     )       
-#     return min_result_object['fun']*100, min_result_object['x']*100
-
-# # Use parallel processing to minimize for each target
-# results = Parallel(n_jobs=-1)(delayed(minimize_for_target)(t, np.array(portfolio_weights).flatten()) for t in target)
+sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in results)
