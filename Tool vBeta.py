@@ -18,27 +18,27 @@ import plotly.graph_objects as go
 
 ##  REMEMBER TO CHANGE THIS URL TO THE NEW ONE LATER
 url = f'https://raw.githubusercontent.com/JoNijembazi/TCF-Portfolio/main/U27776029-101.xlsx' 
-prtu = pd.read_excel(url,engine='openpyxl')
+Stock_Master_list = pd.read_excel(url,engine='openpyxl')
 
 # Clean Data
     # Drop rows with missing values
-prtu.columns = prtu.iloc[8]
-prtu = prtu[prtu.columns[[0,2,3,11,12]]]
-prtu.drop(range(12),inplace=True)
-prtu.reset_index(drop=True,inplace=True)
+Stock_Master_list.columns = Stock_Master_list.iloc[8]
+Stock_Master_list = Stock_Master_list[Stock_Master_list.columns[[0,2,3,11,12]]]
+Stock_Master_list.drop(range(12),inplace=True)
+Stock_Master_list.reset_index(drop=True,inplace=True)
 
     # Regions
-prtu['Country'] = 'n.a'
+Stock_Master_list['Country'] = 'n.a'
 
-for i in range(len(prtu[:-2])):
-    if 'US' in prtu['Security'][i]:
-        prtu.loc[i,'Country'] = 'United States'
+for i in range(len(Stock_Master_list[:-2])):
+    if 'US' in Stock_Master_list['Security'][i]:
+        Stock_Master_list.loc[i,'Country'] = 'United States'
     else:
-        prtu.loc[i,'Country'] = 'Canada'
+        Stock_Master_list.loc[i,'Country'] = 'Canada'
 
 # Portfolio Analysis
     # Prepare Equity List
-eq_list = prtu['Security'].iloc[:-2].tolist()
+eq_list = Stock_Master_list['Security'].iloc[:-2].tolist()
 eq_list = [x.replace('-U CN','-UN.TO') for x in eq_list]
 eq_list = [x.replace(' CN','.TO') for x in eq_list]
 eq_list = [x.replace(' US','') for x in eq_list]
@@ -69,34 +69,34 @@ for x in eq_list:
     
     # Remove missing/delisted stocks
 eq_list = df.columns[~df.isna().all()]  
-df.columns = prtu['Security'].iloc[:-2].tolist()
+df.columns = Stock_Master_list['Security'].iloc[:-2].tolist()
 drop_cols = df.columns[df.isna().all()]
 df.drop(drop_cols,axis=1,inplace=True)
-prtu = prtu[~prtu['Security'].isin(drop_cols)]
+Stock_Master_list = Stock_Master_list[~Stock_Master_list['Security'].isin(drop_cols)]
 
 
     # Add Descriptive Data
-prtu[['Sector','Trailing P/E','1Y Forward P/E','Consensus Target']] = 'n.a'
-prtu['Type'] = 'Cash'
-for x,y in zip(eq_list,prtu['Security'].iloc[:-2]):        
+Stock_Master_list[['Sector','Trailing P/E','1Y Forward P/E','Consensus Target']] = 'n.a'
+Stock_Master_list['Type'] = 'Cash'
+for x,y in zip(eq_list,Stock_Master_list['Security'].iloc[:-2]):        
     try:
         # Check type 
         ticker_info = yf.Ticker(x).info
-        prtu.loc[prtu['Security']==y,'Type'] = 'Stock'
+        Stock_Master_list.loc[Stock_Master_list['Security']==y,'Type'] = 'Stock'
         try:
             etf_sector = pd.Series(yf.Ticker(x).funds_data.sector_weightings).idxmax()
-            prtu.loc[prtu['Security']==y,'Type'] = 'ETF'
+            Stock_Master_list.loc[Stock_Master_list['Security']==y,'Type'] = 'ETF'
         except:
             pass 
         # Sector
-        prtu.loc[prtu['Security']==y,'Sector'] = ticker_info.get('sectorDisp', etf_sector)
-        prtu.loc[prtu['Security']==y,'Sector']
+        Stock_Master_list.loc[Stock_Master_list['Security']==y,'Sector'] = ticker_info.get('sectorDisp', etf_sector)
+        Stock_Master_list.loc[Stock_Master_list['Security']==y,'Sector']
         # Price to Earnings
-        prtu.loc[prtu['Security']==y,'Trailing P/E'] = ticker_info.get('trailingPE', 'n.a')
-        prtu.loc[prtu['Security']==y,'1Y Forward P/E'] = ticker_info.get('forwardPE', 'n.a')
+        Stock_Master_list.loc[Stock_Master_list['Security']==y,'Trailing P/E'] = ticker_info.get('trailingPE', 'n.a')
+        Stock_Master_list.loc[Stock_Master_list['Security']==y,'1Y Forward P/E'] = ticker_info.get('forwardPE', 'n.a')
         
         # Consensus Target
-        prtu.loc[prtu['Security']==y,'Consensus Target'] = ticker_info.get('targetMeanPrice', 'n.a')
+        Stock_Master_list.loc[Stock_Master_list['Security']==y,'Consensus Target'] = ticker_info.get('targetMeanPrice', 'n.a')
     except:
         continue
 
@@ -120,43 +120,40 @@ normalized_codes = {
                 }
 
 for i in sector_codes.keys():
-    prtu.loc[prtu['Sector']==i,'Sector'] = sector_codes[i]
+    Stock_Master_list.loc[Stock_Master_list['Sector']==i,'Sector'] = sector_codes[i]
 
 for i in normalized_codes.keys():
-    prtu.loc[prtu['Sector']==i,'Sector'] = normalized_codes[i]
+    Stock_Master_list.loc[Stock_Master_list['Sector']==i,'Sector'] = normalized_codes[i]
 
 # Quantitative Data
         # # Last Price
 last_price = df.iloc[-1]
-prtu['Price'] = last_price.reindex(prtu['Security'],fill_value=0).values    
+Stock_Master_list['Price'] = last_price.reindex(Stock_Master_list['Security'],fill_value=0).values    
 
         # # Add USD/CAD
 usd_cad = yf.Ticker('USDCAD=X').info['regularMarketPrice']    
-prtu.loc[prtu['Security']=='USD','Price'] = usd_cad
+Stock_Master_list.loc[Stock_Master_list['Security']=='USD','Price'] = usd_cad
 
         # # Market Value CAD and no CAD
-prtu['Market Value'] = prtu['Price'] * prtu['Position']     
-prtu['Market Value (CAD)'] = prtu['Market Value']
+Stock_Master_list['Market Value'] = Stock_Master_list['Price'] * Stock_Master_list['Position']     
+Stock_Master_list['Market Value (CAD)'] = Stock_Master_list['Market Value']
 
-for i in prtu.index:
-    if prtu.loc[i, 'Country'] == 'United States':
-        prtu.loc[i, 'Market Value (CAD)'] = prtu.loc[i, 'Price'] * prtu.loc[i, 'Position'] * usd_cad 
-    if prtu.loc[i, 'Security'] == 'CAD':
-        prtu.loc[i, 'Market Value'] = prtu.loc[i, 'Position'] * 1000
-        prtu.loc[i, 'Market Value (CAD)'] = prtu.loc[i, 'Position'] * 1000
-    if prtu.loc[i, 'Security'] == 'USD':
-        prtu.loc[i, 'Market Value'] = prtu.loc[i, 'Position'] * 1000
-        prtu.loc[i, 'Market Value (CAD)'] = prtu.loc[i, 'Market Value'] * usd_cad
+for i in Stock_Master_list.index:
+    if Stock_Master_list.loc[i, 'Country'] == 'United States':
+        Stock_Master_list.loc[i, 'Market Value (CAD)'] = Stock_Master_list.loc[i, 'Price'] * Stock_Master_list.loc[i, 'Position'] * usd_cad 
+    if Stock_Master_list.loc[i, 'Security'] == 'CAD':
+        Stock_Master_list.loc[i, 'Market Value'] = Stock_Master_list.loc[i, 'Position'] * 1000
+        Stock_Master_list.loc[i, 'Market Value (CAD)'] = Stock_Master_list.loc[i, 'Position'] * 1000
+    if Stock_Master_list.loc[i, 'Security'] == 'USD':
+        Stock_Master_list.loc[i, 'Market Value'] = Stock_Master_list.loc[i, 'Position'] * 1000
+        Stock_Master_list.loc[i, 'Market Value (CAD)'] = Stock_Master_list.loc[i, 'Market Value'] * usd_cad
     else:
         continue 
 
         # # Weight
-prtu['Weight'] = prtu['Market Value (CAD)'] / prtu['Market Value (CAD)'].sum()
+Stock_Master_list['Weight'] = Stock_Master_list['Market Value (CAD)'] / Stock_Master_list['Market Value (CAD)'].sum()
 
-
-
-# Portfolio Optimization
-
+# Portfolio Quant Metrics
     # Calculate Expected Returns
         # # Returns
 daily_returns = df.pct_change()
@@ -164,30 +161,28 @@ mean_returns = (daily_returns.mean() * 252)*100
 annualized_returns = (((1 + daily_returns).cumprod().iloc[-1]) ** (252/len(df)) - 1)*100
         
         # # Reindex & match with prtu
-annualized_returns = annualized_returns.reindex(prtu['Security'], fill_value=0)
-mean_returns = mean_returns.reindex(prtu['Security'], fill_value=0)
+annualized_returns = annualized_returns.reindex(Stock_Master_list['Security'], fill_value=0)
+mean_returns = mean_returns.reindex(Stock_Master_list['Security'], fill_value=0)
 
-prtu['Annualized Returns'] = annualized_returns.values
-prtu['Mean Returns'] = mean_returns.values
+        # #
+Stock_Master_list['Annualized Returns'] = annualized_returns.values
+Stock_Master_list['Mean Returns'] = mean_returns.values
 
     # Calculate sigma & variance
 ann_var = daily_returns.var() * 253 *100
 ann_std = pd.Series(daily_returns.std() * np.sqrt(253)) *100
 
         # # Reindex & match with prtu
-ann_std= ann_std.reindex(prtu['Security'], fill_value=0) 
-ann_var= ann_var.reindex(prtu['Security'], fill_value=0)
+ann_std= ann_std.reindex(Stock_Master_list['Security'], fill_value=0) 
+ann_var= ann_var.reindex(Stock_Master_list['Security'], fill_value=0)
 
-prtu['Annualized Volatility'] = ann_std.values
-prtu['Annualized Variance'] = ann_var.values
+Stock_Master_list['Annualized Volatility'] = ann_std.values
+Stock_Master_list['Annualized Variance'] = ann_var.values
 
     # Chart Portfolio Return to Volatility
-fig = px.scatter(prtu,x='Annualized Volatility',y='Annualized Returns',color='Country',hover_name='Security')
+fig = px.scatter(Stock_Master_list,x='Annualized Volatility',y='Annualized Returns',color='Country',hover_name='Security')
 fig.update_layout(title='Portfolio Return to Volatility',xaxis_title='Annualized Volatility (%)',yaxis_title='Annualized Returns (%)')
 fig.show()
-
-# Add logs (As per log returns)
-
 
     # Calculate Covariance & Correlation Matrix
 cov_matrix = daily_returns.cov() * 253
@@ -205,34 +200,25 @@ matrix = px.imshow(corr_matrix.round(2),
 matrix.show()
 
     # Asset Weights
-weights = np.array(prtu['Weight'].iloc[:-2])
+weights = np.array(Stock_Master_list['Weight'].iloc[:-2])
+    
+    # Sector Weights
+GICs = Stock_Master_list['Sector'].iloc[:-2].unique()
+Sector_weights = pd.Series([float(Stock_Master_list.loc[Stock_Master_list['Sector']==i,'Weight'].sum()) for i in GICs],index= GICs,dtype='float64').to_numpy()
 
     # ETF Data
-etfs = prtu.loc[prtu['Type']=='ETF']
-    # Functions
-
-    # Sector Constraints
-IPS_Sector_constraint = {'Communication Services': (0, 0.165),
-                      'Consumer Discretionary': (0, 0.173), 
-                      'Consumer Staples': (0, 0.154), 
-                      'Energy': (0, 0.154), 
-                      'Financials Services': (0.163, 0.363), 
-                      'Health Care': (0, 0.16), 
-                      'Industrials': (0.08, 0.208), 
-                      'Information Technology': (0.113, 0.313), 
-                      'Materials': (0, 0.166), 
-                      'Real Estate': (0, 0.116), 
-                      'Utilities': (0, 0.131)
-                      }
-
-
-
-GICs = prtu['Sector'].iloc[:-2].unique()
-Sector_weights = pd.Series([float(prtu.loc[prtu['Sector']==i,'Weight'].sum()) for i in GICs],index= GICs,dtype='float64').to_numpy()
-portfolio_weights = np.array(prtu['Weight'].iloc[:-2])[:, np.newaxis]
+etfs = Stock_Master_list.loc[Stock_Master_list['Type']=='ETF']
 ETF_weights = pd.Series([float(etfs.loc[etfs['Sector']==i,'Weight'].sum()) for i in GICs],index= GICs,dtype='float64').to_numpy()
 
-# Risk Free Rate (10-Year US Treasury)
+Actives = Stock_Master_list.loc[~Stock_Master_list['Type']=='ETF']
+Actives_weights = pd.Series([float(Actives.loc[Actives['Sector']==i,'Weight'].sum()) for i in GICs],index= GICs,dtype='float64').to_numpy()
+
+    # Total Weights (ETF + Active)
+portfolio_weights = np.array(Stock_Master_list['Weight'].iloc[:-2])[:, np.newaxis]
+
+
+# Portfolio Optimization
+    # Risk Free Rate (10-Year US Treasury)
 risk_free_rate = yf.download('^TNX',period='1d',progress=False)['Close'].iloc[-1] / 100
 
     # Generate random weights
@@ -255,7 +241,25 @@ target =  np.linspace(
 
 size_constraints = tuple((0,0.1) for w in portfolio_weights)
 
-# Define the constraints function
+# Define the constraints & Return function
+    # Sector Constraints
+IPS_Sector_constraint = {'Communication Services': (0, 0.165),
+                      'Consumer Discretionary': (0, 0.173), 
+                      'Consumer Staples': (0, 0.154), 
+                      'Energy': (0, 0.154), 
+                      'Financials Services': (0.163, 0.363), 
+                      'Health Care': (0, 0.16), 
+                      'Industrials': (0.08, 0.208), 
+                      'Information Technology': (0.113, 0.313), 
+                      'Materials': (0, 0.166), 
+                      'Real Estate': (0, 0.116), 
+                      'Utilities': (0, 0.131)
+                      }
+
+    # ETF
+
+
+    # Max returns constraints
 def constraints_func(target):
     return (
         {'type': 'eq', 'fun': lambda x: portfolio_ann_return(x) - target},
@@ -290,6 +294,18 @@ results = Parallel(n_jobs=-1)(delayed(minimize_for_target)(t, np.array(portfolio
 # Extract the results
 obj_sd, obj_weight = zip(*results)
 
+
+# Define Sharpe Ratio Function
+
+def sharpe_ratio(input):
+    p_ret = portfolio_ann_return(input[1]/100)
+    p_vol = input[0]
+    sharpe = (p_ret - risk_free_rate*100) / p_vol
+    return sharpe, p_vol
+sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in results)
+
+sharpe,vol = zip(*sharpe_results)
+
 # Scatter Plot of Mean-Variance Line & Portfolios
 
 fig = go.Figure()
@@ -298,8 +314,10 @@ fig.add_trace(go.Scatter(x=obj_sd,
                          y=target, 
                          mode='lines',
                          name='Efficient Frontier',
+                         customdata=sharpe,
                          hovertemplate="Return:% {x}%<br>" +
-                         "Standard Deviation: %{y}%")
+                         "Standard Deviation: %{y}%"+
+                         "<br>Sharpe Ratio: %{customdata}",)
                          )
 
 fig.update_layout(xaxis_title='Portfolio Volatility (%)',
@@ -307,11 +325,11 @@ fig.update_layout(xaxis_title='Portfolio Volatility (%)',
                   title = 'Efficient Frontier vs Assets',
                   hovermode ='closest')
 
-fig.add_trace(go.Scatter(x=prtu['Annualized Volatility'],
-                y=prtu['Annualized Returns'],
+fig.add_trace(go.Scatter(x=Stock_Master_list['Annualized Volatility'],
+                y=Stock_Master_list['Annualized Returns'],
                 mode='markers',
                 name='Assets',
-                customdata=prtu[['Security', 'Type', 'Country']].values,
+                customdata=Stock_Master_list[['Security', 'Type', 'Country']].values,
                 hovertemplate= "<b>%{customdata[0]}</b><br>"+
                 "<b>%{customdata[1]}</b><br>"+
                 "<b>%{customdata[2]}</b><br><br>"+
@@ -321,11 +339,4 @@ fig.add_trace(go.Scatter(x=prtu['Annualized Volatility'],
 
 fig.show()
 
-# Define Sharpe Ratio Function
-def sharpe_ratio(input):
-    p_ret = portfolio_ann_return(input[1])
-    p_vol = input[0]
-    sharpe = (p_ret - risk_free_rate*100) / p_vol
-    return sharpe
 
-sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in results)
