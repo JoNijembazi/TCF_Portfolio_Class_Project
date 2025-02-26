@@ -413,6 +413,7 @@ corr_matrix_graph = px.imshow(corr_matrix.round(2),
             labels=dict(color='Correlation'),
             text_auto=True,
             color_continuous_scale='RdBu',
+            width=1600,
             height=800
             )
 corr_matrix_graph.update_layout(plot_bgcolor='white',
@@ -543,97 +544,12 @@ histogram.update_layout(
     yaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
 )
 
+# Display Graphs
+frontiergraph_actives.show()
+frontiergraph_etfs.show()
+frontiergraph_full.show()
+securities_list.show()
+Price_chart_stock.show()
 histogram.show()
 
-# Initialize the Dash app
-app = dash.Dash(__name__)
 
-# Define the layout of the app
-app.layout = html.Div([
-    html.H1("Portfolio Analysis Dashboard", style={'textAlign': 'center', 'color': '#8F001A'}),
-    
-    dcc.Tabs([
-        dcc.Tab(label='Efficient Frontier', children=[
-            dcc.Dropdown(
-                id='portfolio-type-dropdown',
-                options=[
-                    {'label': 'Actives Only', 'value': 'actives'},
-                    {'label': 'ETFs Only', 'value': 'etfs'},
-                    {'label': 'Full Portfolio', 'value': 'full'}
-                ],
-                value='actives',
-                style={'width': '50%', 'margin': 'auto'}
-            ),
-            dcc.Graph(id='efficient-frontier'),
-        ]),
-        dcc.Tab(label='Correlation Matrix', children=[
-            dcc.Graph(id='correlation-matrix', figure=corr_matrix_graph)
-        ]),
-        dcc.Tab(label='Return vs Volatility', children=[
-            dcc.Graph(id='return-volatility', figure=Return_Vol_graph)
-        ]),
-        dcc.Tab(label='Performance Over Time', children=[
-            dcc.Graph(id='price-performance', figure=Price_chart_stock)
-        ]),
-        dcc.Tab(label='Sector Performance Over Time', children=[
-            dcc.Dropdown(
-                id='sector-dropdown',
-                options=[{'label': sector, 'value': sector} for sector in Stock_Master_list['Sector'].unique()],
-                value='Information Technology',
-                style={'width': '50%', 'margin': 'auto'}
-            ),
-            dcc.Graph(id='sector-performance')
-        ]),
-        dcc.Tab(label='Securities List', children=[
-            dcc.Graph(id='securities-list', figure=securities_list)
-        ]),
-        dcc.Tab(label='Histogram of Daily Returns', children=[
-            dcc.Graph(id='daily-returns-histogram', figure=histogram)
-        ])
-    ])
-])
-
-@app.callback(
-    [Output('efficient-frontier', 'figure')],
-    Input('portfolio-type-dropdown', 'value')
-)
-def update_efficient_frontier(portfolio_type):
-    if portfolio_type == 'actives':
-        return [frontiergraph_actives]
-    elif portfolio_type == 'etfs':
-        return [frontiergraph_etfs]
-    elif portfolio_type == 'full':
-        return [frontiergraph_full]
-
-@app.callback(
-    Output('sector-performance', 'figure'),
-    Input('sector-dropdown', 'value')
-)
-def update_sector_performance(selected_sector):
-    sector = Stock_Master_list.loc[Stock_Master_list['Sector'] == selected_sector]['Security']
-    chart_performance = df[sector].iloc[-date:].pct_change(fill_method=None)
-    relative_performance = ((chart_performance + 1).cumprod() - 1) * 100
-    relative_performance.iloc[0] = 0
-    
-    Price_chart_Sec = px.line(relative_performance, 
-                              y=relative_performance.columns, 
-                              x=relative_performance.index, 
-                              title=f'<i><b>Performance Over Time, by Sector: {selected_sector}</b></i>')
-    Price_chart_Sec.update_layout(xaxis_title='Date', 
-                                  yaxis_title='Performance', 
-                                  legend_title='Securities',
-                                  plot_bgcolor='white',
-                                  paper_bgcolor='WhiteSmoke',
-                                  font=dict(color='#8F001A'),
-                                  title_font=dict(size=20, color='#8F001A'),
-                                  xaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
-                                  yaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
-                                  margin=dict(t=50))
-    Price_chart_Sec.update_traces(hovertemplate='%{y:.2f}')
-    Price_chart_Sec['layout'].pop('updatemenus')
-    
-    return Price_chart_Sec
-
-# Run the app
-if __name__ == '__main__':
-    app.run_server(debug=True)
