@@ -355,16 +355,16 @@ sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_
     # Extract the results
 obj_sd_full,obj_weight_full = zip(*minimized_results_etfs)
 sharpe_full, vol_full = zip(*sharpe_results)
-print(sharpe_full, vol_full)
+
 # Graph & Table Section
 # ------------------
 
 
 #  Actives only
-def create_frontier_graph(obj_sd, target, sharpe, Stock_Master_list, title):
+def create_frontier_graph(obj_sds, target, sharpe, Stock_Master_list, title):
     frontiergraph = go.Figure()
 
-    frontiergraph.add_trace(go.Scatter(x=obj_sd, 
+    frontiergraph.add_trace(go.Scatter(x=obj_sds, 
                              y=target, 
                              mode='lines',
                              name='Efficient Frontier',
@@ -543,6 +543,8 @@ histogram.update_layout(
     xaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
     yaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
 )
+
+app = dash.html(__name__)
 
 # Display Graphs
 frontiergraph_actives.show()
