@@ -342,10 +342,11 @@ sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_
     # Extract the results
 obj_sd, obj_weight = zip(*minimized_results)
 sharpe,vol = zip(*sharpe_results)
+
 # Combine the weights and names of Active Weights securities
 active_weights_combined = pd.DataFrame({
-    'Security': Actives_Weights['Security'],
-    'Weight': obj_weight
+    'Security': Stock_Master_list['Security'].iloc[:-2].values,  
+    'Weight': np.array(obj_weight).flatten()[:len(Stock_Master_list['Security'].iloc[:-2])]
 })
 
 
@@ -358,8 +359,8 @@ obj_sd_etfs,obj_weight_etfs = zip(*minimized_results_etfs)
 sharpe_etfs, vol_etfs = zip(*sharpe_results)
 
 etfs_weights_returned = pd.DataFrame({
-    'Security': ETF_Weights['Security'],
-    'Weight': obj_weight_etfs
+    'Security': Stock_Master_list['Security'].iloc[:-2].values,
+    'Weight': np.array(obj_weight_etfs).flatten()[:len(Stock_Master_list['Security'].iloc[:-2])]
 })
 
 
@@ -372,8 +373,8 @@ obj_sd_full,obj_weight_full = zip(*minimized_results_etfs)
 print(obj_weight_full)
 sharpe_full, vol_full = zip(*sharpe_results)
 full_weights_returned = pd.DataFrame({
-    'Security': portfolio_weights['Security'],
-    'Weight': obj_weight_full
+    'Security': Stock_Master_list['Security'].iloc[:-2].values,
+    'Weight': np.array(obj_weight_full).flatten()[:len(Stock_Master_list['Security'].iloc[:-2])]
 })
 
 
