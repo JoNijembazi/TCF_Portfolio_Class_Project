@@ -203,24 +203,20 @@ ETF_Weights = ETF_Weights / ETF_Weights.sum()
 ETF_Weights = pd.DataFrame({
     'Weight': ETF_Weights,
     'Sector': Stock_Master_list['Sector'].iloc[:-2],
-    'Country': Stock_Master_list['Country'].iloc[:-2]})
+    'Country': Stock_Master_list['Country'].iloc[:-2],
+    'Ticker': Stock_Master_list['Security'].iloc[:-2]})
 ETF_Weights = np.array(ETF_Weights)
 
-# etfs = Stock_Master_list.loc[Stock_Master_list['Type']=='ETF']
-# ETF_Weights = Stock_Master_list['Weight'].apply(lambda x: x if Stock_Master_list.loc[Stock_Master_list['Weight'] == x, 'Type'].values[0] == 'ETF' else 0).values
-# ETF_Weights = np.array(ETF_Weights['Weight']/ETF_Weights['Weight'].sum(),Stock_Master_list[['Sector','Country']])    
 
-    # Actives Weights
-# Actives = Stock_Master_list.loc[Stock_Master_list['Type']=='Stock']
-# Actives_Weights = (Stock_Master_list['Weight'].apply(lambda x: x if Stock_Master_list.loc[Stock_Master_list['Weight'] == x, 'Type'].values[0] == 'Stock' else 0).values)
-# Actives_Weights = np.array(Actives_Weights['Weight']/Actives_Weights['Weight'].sum(),Stock_Master_list[['Sector','Country']])    
+# Filter Active weights
 
 Actives_Weights = Stock_Master_list[:-2].apply(lambda row: row['Weight'] if row['Type'] == 'Stock' else 0, axis=1).values
 Actives_Weights = Actives_Weights / Actives_Weights.sum()
 Actives_Weights= pd.DataFrame({
     'Weight': Actives_Weights,
     'Sector': Stock_Master_list['Sector'].iloc[:-2],
-    'Country': Stock_Master_list['Country'].iloc[:-2]})
+    'Country': Stock_Master_list['Country'].iloc[:-2],
+    'Ticker': Stock_Master_list['Security'].iloc[:-2]})
 Actives_Weights = np.array(Actives_Weights)
 
 
@@ -253,7 +249,7 @@ IPS_Sector_constraint = {'Communication Services': (0, 0.165),
                       'Consumer Discretionary': (0, 0.173), 
                       'Consumer Staples': (0, 0.154), 
                       'Energy': (0, 0.154), 
-                      'Financials Services': (0.163, 0.363), 
+                      'Financial Services': (0.163, 0.363), 
                       'Health Care': (0, 0.16), 
                       'Industrials': (0.08, 0.208), 
                       'Information Technology': (0.113, 0.313), 
@@ -276,15 +272,22 @@ def sum_by_country(weights, country):
     return np.sum(weights[country_mask])
 
 def full_constraints_func(target):
+    # Generate a list of constraints for portfolio optimization.
+
+    # Parameters:
+    # target (float): The target annualized return for the portfolio.
+
+    #Returns:
+    #list: A list of constraint dictionaries for the optimization process.
     constraints = [
         {'type': 'eq', 'fun': lambda x: portfolio_ann_return(x) - target},
         {'type': 'eq', 'fun': lambda x: np.sum(x) - 1},
         {'type': 'eq', 'fun': lambda x: sum_by_country(x, 'Canada') - 0.40}
     ]
-    for sector, (min_w, max_w) in IPS_Sector_constraint.items():
+    for sector, (_, max_w) in IPS_Sector_constraint.items():
         sector_mask = np.array(Stock_Master_list['Sector'].iloc[:-2] == sector)
         constraints.append(
-            {'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: max_w - np.sum(x[sector_mask])},
+            {'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: max_w - np.sum(x[sector_mask])}
         )
     return constraints
 
@@ -308,7 +311,7 @@ def sharpe_ratio(input):
 target =  np.linspace(
     start=10,
     stop=20,
-    num=200
+    num=100
             )
 
 # Define the minimization function for all Securities
@@ -329,7 +332,7 @@ def full_minimize_for_target(target, initial_w):
         x0=initial_w[:, 0],
         method='SLSQP',
         bounds= tuple((0,0.075) for _ in range(len(initial_w))),
-        constraints=simple_constraints_func(target=target)
+        constraints=full_constraints_func(target=target)
     )
     return min_result_object['fun']*100, min_result_object['x']*100
 
@@ -339,6 +342,12 @@ sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_
     # Extract the results
 obj_sd, obj_weight = zip(*minimized_results)
 sharpe,vol = zip(*sharpe_results)
+# Combine the weights and names of Active Weights securities
+active_weights_combined = pd.DataFrame({
+    'Security': Actives_Weights['Security'],
+    'Weight': obj_weight
+})
+
 
 # Minimize function for etfs securities, all constraints
 
@@ -348,16 +357,30 @@ sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_
 obj_sd_etfs,obj_weight_etfs = zip(*minimized_results_etfs)
 sharpe_etfs, vol_etfs = zip(*sharpe_results)
 
+etfs_weights_returned = pd.DataFrame({
+    'Security': ETF_Weights['Security'],
+    'Weight': obj_weight_etfs
+})
+
+
 # Minimize function for all securities, all constraints
 
 minimized_results_full = Parallel(n_jobs=-1)(delayed(full_minimize_for_target)(t, np.array(portfolio_weights)) for t in target)
 sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_results_full)
     # Extract the results
 obj_sd_full,obj_weight_full = zip(*minimized_results_etfs)
+print(obj_weight_full)
 sharpe_full, vol_full = zip(*sharpe_results)
+full_weights_returned = pd.DataFrame({
+    'Security': portfolio_weights['Security'],
+    'Weight': obj_weight_full
+})
+
+
 # Graph & Table Section
 # ------------------
 
+# Create a table of the portfolio weights
 
 #  Actives only
 def create_frontier_graph(obj_sds, target, sharpe, Stock_Master_list, title):
@@ -544,8 +567,6 @@ histogram.update_layout(
     xaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
     yaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
 )
-
-app = dash.html(__name__)
 
 # Display Graphs
 # Build a Dash app with tabs to separate the graphs
