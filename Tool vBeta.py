@@ -82,7 +82,7 @@ Stock_Master_list = Stock_Master_list[~Stock_Master_list['Security'].isin(drop_c
 
 
     # Add Descriptive Data
-Stock_Master_list[['Sector','Trailing P/E','1Y Forward P/E','Consensus Target']] = 'n.a'
+Stock_Master_list[['Sector','Trailing P/E','1Y Forward P/E','Consensus Target','Beta']] = 'n.a'
 Stock_Master_list['Type'] = 'Cash'
 for x,y in zip(eq_list,Stock_Master_list['Security'].iloc[:-2]):        
     try:
@@ -103,6 +103,11 @@ for x,y in zip(eq_list,Stock_Master_list['Security'].iloc[:-2]):
         
         # Consensus Target
         Stock_Master_list.loc[Stock_Master_list['Security']==y,'Consensus Target'] = ticker_info.get('targetMeanPrice', 'n.a')
+
+        # Beta
+        Stock_Master_list.loc[Stock_Master_list['Security']==y,'Beta'] = ticker_info.get('beta', 'n.a')
+    
+
     except:
         continue
 
@@ -202,10 +207,9 @@ ETF_Weights = Stock_Master_list[:-2].apply(lambda row: row['Weight'] if row['Typ
 ETF_Weights = ETF_Weights / ETF_Weights.sum()
 ETF_Weights = pd.DataFrame({
     'Weight': ETF_Weights,
-    'Sector': Stock_Master_list['Sector'].iloc[:-2],
-    'Country': Stock_Master_list['Country'].iloc[:-2],
-    'Ticker': Stock_Master_list['Security'].iloc[:-2]})
-ETF_Weights = np.array(ETF_Weights)
+    'Sector': Stock_Master_list['Sector'].iloc[:-2].values,
+    'Country': Stock_Master_list['Country'].iloc[:-2].values,
+    'Ticker': Stock_Master_list['Security'].iloc[:-2].values})
 
 
 # Filter Active weights
@@ -258,21 +262,44 @@ IPS_Sector_constraint = {'Communication Services': (0, 0.165),
                       'Utilities': (0, 0.131)
                       }
 
+def sum_by_country(weights, country):
+    country_mask = np.array(Stock_Master_list['Country'].iloc[:-2] == country)
+    return np.sum(weights[country_mask,0])
+
+def sum_by_type(weights, type):
+    type_mask = np.array(Stock_Master_list['Type'].iloc[:-2] == type)
+    return np.sum(weights[type_mask])
+
     # Max returns constraints
+
+# Define the constraints function
 def simple_constraints_func(target):
     return (
         {'type': 'eq', 'fun': lambda x: portfolio_ann_return(x) - target},
         {'type': 'eq', 'fun': lambda x: np.sum(x) - 1},
-        {'type': 'eq', 'fun': lambda x: sum_by_country(x, 'Canada') - 0.40}
+        {'type': 'eq', 'fun': lambda x: sum_by_country(x, 'Canada') - 0.40},
+        {'type': 'eq', 'fun': lambda x: sum_by_type(x, 'Stock') - 1}
     )
 
-# Define the constraints function
-def sum_by_country(weights, country):
-    country_mask = np.array(Stock_Master_list['Country'].iloc[:-2] == country)
-    return np.sum(weights[country_mask])
+def etf_constraints_func(target):
+    constraints = [
+        {'type': 'eq', 'fun': lambda x: portfolio_ann_return(x) - target},
+        {'type': 'eq', 'fun': lambda x: np.sum(x) - 1},
+        {'type': 'eq', 'fun': lambda x: sum_by_country(x, 'Canada') - 0.40},
+        {'type': 'eq', 'fun': lambda x: sum_by_type(x, 'ETF') - 1}
+    ]
+    for sector, (min_w, max_w) in IPS_Sector_constraint.items():
+        sector_mask = np.array(Stock_Master_list['Sector'].iloc[:-2] == sector)
+        constraints.append(
+            [
+            {'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: max_w - np.sum(x[sector_mask])},
+            {'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: np.sum(x[sector_mask]) - min_w}
+            ]
+        )
+    return constraints
 
 def full_constraints_func(target):
-    # Generate a list of constraints for portfolio optimization.
+    # Generate a list of constraintsETF_Weights[sector_mask, 0]ptimization.
 
     # Parameters:
     # target (float): The target annualized return for the portfolio.
@@ -284,10 +311,13 @@ def full_constraints_func(target):
         {'type': 'eq', 'fun': lambda x: np.sum(x) - 1},
         {'type': 'eq', 'fun': lambda x: sum_by_country(x, 'Canada') - 0.40}
     ]
-    for sector, (_, max_w) in IPS_Sector_constraint.items():
+    for sector, (min_w, max_w) in IPS_Sector_constraint.items():
         sector_mask = np.array(Stock_Master_list['Sector'].iloc[:-2] == sector)
-        constraints.append(
-            {'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: max_w - np.sum(x[sector_mask])}
+        constraints.append(            
+            [
+            {'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: max_w - np.sum(x[sector_mask])},
+            {'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: np.sum(x[sector_mask]) - min_w}
+            ]
         )
     return constraints
 
@@ -310,8 +340,8 @@ def sharpe_ratio(input):
 
 target =  np.linspace(
     start=10,
-    stop=20,
-    num=100
+    stop=25,
+    num=200
             )
 
 # Define the minimization function for all Securities
@@ -323,7 +353,16 @@ def simple_minimize_for_target(target, initial_w):
         bounds=tuple((0,0.075) for _ in range(len(initial_w))),
         constraints=simple_constraints_func(target=target)
     )
-    
+    return min_result_object['fun']*100, min_result_object['x']*100
+
+def etf_minimize_for_target(target, initial_w):
+    min_result_object = sco.minimize(
+        fun=portfolio_volatility,
+        x0=initial_w[:, 0],
+        method='SLSQP',
+        bounds= tuple((0,0.075) for _ in range(len(initial_w))),
+        constraints=etf_constraints_func(target=target)
+    )
     return min_result_object['fun']*100, min_result_object['x']*100
 
 def full_minimize_for_target(target, initial_w):
@@ -337,31 +376,28 @@ def full_minimize_for_target(target, initial_w):
     return min_result_object['fun']*100, min_result_object['x']*100
 
 # MINIMIZE
-minimized_results = Parallel(n_jobs=-1)(delayed(simple_minimize_for_target)(t, np.array(Actives_Weights)) for t in target)
+minimized_results = Parallel(n_jobs=-1)(delayed(simple_minimize_for_target)(t, np.array(Actives_Weights).reshape(-1, 1)) for t in target)
+obj_sd, obj_weight = zip(*minimized_results)
+
 sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_results)
     # Extract the results
-obj_sd, obj_weight = zip(*minimized_results)
 sharpe,vol = zip(*sharpe_results)
-
+port_returns_actives = pd.DataFrame(np.array([portfolio_ann_return(i) for i in obj_weight]))
 # Combine the weights and names of Active Weights securities
-active_weights_combined = pd.DataFrame({
-    'Security': Stock_Master_list['Security'].iloc[:-2].values,  
-    'Weight': np.array(obj_weight).flatten()[:len(Stock_Master_list['Security'].iloc[:-2])]
-})
+active_weights_returned = pd.DataFrame(obj_weight)
+active_weights_returned.columns = Stock_Master_list['Security'].iloc[:-2].values
 
 
 # Minimize function for etfs securities, all constraints
 
-minimized_results_etfs = Parallel(n_jobs=-1)(delayed(full_minimize_for_target)(t, np.array(ETF_Weights)) for t in target)
-sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_results_etfs)
+minimized_results_etfs = Parallel(n_jobs=-1)(delayed(etf_minimize_for_target)(t, np.array(ETF_Weights)) for t in target)
+sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)((sd, weights)) for sd, weights in minimized_results_etfs)
     # Extract the results
 obj_sd_etfs,obj_weight_etfs = zip(*minimized_results_etfs)
 sharpe_etfs, vol_etfs = zip(*sharpe_results)
 
-etfs_weights_returned = pd.DataFrame({
-    'Security': Stock_Master_list['Security'].iloc[:-2].values,
-    'Weight': np.array(obj_weight_etfs).flatten()[:len(Stock_Master_list['Security'].iloc[:-2])]
-})
+etf_weights_returned = pd.DataFrame(obj_weight_etfs)
+etf_weights_returned.columns = Stock_Master_list['Security'].iloc[:-2].values
 
 
 # Minimize function for all securities, all constraints
@@ -369,14 +405,12 @@ etfs_weights_returned = pd.DataFrame({
 minimized_results_full = Parallel(n_jobs=-1)(delayed(full_minimize_for_target)(t, np.array(portfolio_weights)) for t in target)
 sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_results_full)
     # Extract the results
-obj_sd_full,obj_weight_full = zip(*minimized_results_etfs)
-print(obj_weight_full)
+obj_sd_full,obj_weight_full = zip(*minimized_results_full)
 sharpe_full, vol_full = zip(*sharpe_results)
-full_weights_returned = pd.DataFrame({
-    'Security': Stock_Master_list['Security'].iloc[:-2].values,
-    'Weight': np.array(obj_weight_full).flatten()[:len(Stock_Master_list['Security'].iloc[:-2])]
-})
+full_weights_returned = pd.DataFrame(obj_weight_full)
+full_weights_returned.columns = Stock_Master_list['Security'].iloc[:-2].values
 
+standard_deviation = pd.Series(obj_sd_full,target)
 
 # Graph & Table Section
 # ------------------
@@ -392,9 +426,10 @@ def create_frontier_graph(obj_sds, target, sharpe, Stock_Master_list, title):
                              mode='lines',
                              name='Efficient Frontier',
                              customdata=sharpe,
-                             hovertemplate="Return: %{x}%<br>" +
-                             "Standard Deviation: %{y}%"+
-                             "<br>Sharpe Ratio: %{customdata}",)
+                             hovertemplate="Return: %{y}%<br>" +
+                             "Standard Deviation: %{x}%"+
+                             "<br>Sharpe Ratio: %{customdata}",
+                             )
                              )
 
     frontiergraph.update_layout(xaxis_title='Portfolio Volatility (%)',
@@ -408,7 +443,16 @@ def create_frontier_graph(obj_sds, target, sharpe, Stock_Master_list, title):
                       xaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
                       yaxis=dict(showline=False, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
                       )
-
+    frontiergraph.add_trace(go.Scatter(
+                        x=[obj_sds[np.argmax(sharpe)]],
+                        y=[target[np.argmax(sharpe)]],
+                        mode='markers',
+                        name='Optimal Portfolio',
+                        marker=dict(color='gold', size=12, symbol='star'),
+                        hovertemplate="Sharpe Ratio: %{customdata}",
+                        customdata=[sharpe[np.argmax(sharpe)]]
+                    ))
+ 
     frontiergraph.add_trace(go.Scatter(x=Stock_Master_list['Annualized Volatility (%)'],
                     y=Stock_Master_list['Annualized Returns (%)'],
                     mode='markers',
@@ -467,28 +511,7 @@ Return_Vol_graph.update_layout(title='<i><b>Portfolio Return to Volatility</b></
 # Price_performance
 date = len(df)
 
-    # Calculate ETF performance
-Type = Stock_Master_list[Stock_Master_list['Type']=='ETF']['Security']    
-chart_performance = df[Type].iloc[-date:].pct_change(fill_method=None)
-
-    # Create a dataframe containing relative performance (first row equals 0)
-relative_performance = ((chart_performance + 1).cumprod() - 1)*100
-relative_performance.iloc[0] = 0
-    
-    # Chart
-Price_chart_stock = px.line(relative_performance, y=relative_performance.columns, x=relative_performance.index, title='<i><b>Performance Over Time, by Security</b></i>')
-Price_chart_stock.update_layout(xaxis_title='Date', 
-                  yaxis_title='Performance', 
-                  legend_title='Securities',
-                  plot_bgcolor='white',
-                  paper_bgcolor='WhiteSmoke',
-                  font=dict(color='#8F001A'),
-                  title_font=dict(size=20, color='#8F001A'),
-                  xaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
-                  yaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
-                  )
-Price_chart_stock.update_traces(hovertemplate='%{y:.2f}')
-
+ 
 # Chart Sector performance
 
     # Calculate ETF performance
@@ -502,24 +525,7 @@ relative_performance = ((chart_performance + 1).cumprod() - 1)*100
 relative_performance.iloc[0] = 0
     
     # Chart
-Price_chart_Sec = px.line(relative_performance, 
-                      y=relative_performance.columns, 
-                      x=relative_performance.index, 
-                      title='<i><b>Performance Over Time, by Sector</b></i>',
-                      )
-Price_chart_Sec.update_layout(xaxis_title='Date', 
-                  yaxis_title='Performance', 
-                  legend_title='Securities',
-                  plot_bgcolor='white',
-                  paper_bgcolor='WhiteSmoke',
-                  font=dict(color='#8F001A'),
-                  title_font=dict(size=20, color='#8F001A'),
-                  xaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
-                  yaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
-                  margin=dict(t=50)  # Reduce the top margin
-                  )
-Price_chart_Sec.update_traces(hovertemplate='%{y:.2f}')
-Price_chart_Sec['layout'].pop('updatemenus')
+
 
 
 # Table of Stock Master List
@@ -544,6 +550,7 @@ securities_list.update_layout(title='<i><b>Securities List</b></i>',
                     title_font=dict(size=20, color='#8F001A'),
                     height=30 * (len(Stock_Master_list) + 1))  # Adjust the height of the table
 
+print(Stock_Master_list['Security'].iloc[:-2][0])
 
 # Histogram of Daily Returns
 histogram = go.Figure()
@@ -575,14 +582,10 @@ app = dash.Dash(__name__)
 
 app.layout = html.Div([
     dcc.Tabs([
-        dcc.Tab(label='Efficient Frontier (Actives Only)', children=[
-            dcc.Graph(figure=frontiergraph_actives)
-        ]),
-        dcc.Tab(label='Efficient Frontier (ETFs Only)', children=[
-            dcc.Graph(figure=frontiergraph_etfs)
-        ]),
-        dcc.Tab(label='Efficient Frontier (Full Portfolio)', children=[
-            dcc.Graph(figure=frontiergraph_full)
+        dcc.Tab(label='Efficient Frontier', children=[
+            dcc.Graph(figure=frontiergraph_actives,style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
+            dcc.Graph(figure=frontiergraph_etfs,style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
+            dcc.Graph(figure=frontiergraph_full,style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'})
         ]),
         dcc.Tab(label='Securities List', children=[
             dcc.Graph(figure=securities_list)
@@ -594,10 +597,18 @@ app.layout = html.Div([
                         options=[{'label': sector, 'value': sector} for sector in Stock_Master_list['Sector'].unique()],
                         value=Stock_Master_list['Sector'].unique()[0],
                         clearable=False,
-                        style={'width': '50%', 'margin': '0 auto'}
+                        style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}
+                    ), 
+                    dcc.Dropdown(
+                        id='stock_selector',
+                        options=[{'label': stocks, 'value': stocks} for stocks in Stock_Master_list['Security'].iloc[:-2]],
+                        value=Stock_Master_list['Security'].iloc[:-2][0],
+                        clearable=False,
+                        style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}
                     ),
-                ], style={'textAlign': 'center', 'margin-bottom': '20px'}),
-            dcc.Graph(id='Price_chart_Sec')
+                    dcc.Graph(id='Price_chart_Sec',style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
+                    dcc.Graph(id='Price_chart_stock',style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
+                ], style={'textAlign': 'center', 'margin-bottom': '20px', 'backgroundColor': 'WhiteSmoke'}),
         ]),
         dcc.Tab(label='Histogram of Daily Returns', children=[
             dcc.Graph(figure=histogram)
@@ -612,9 +623,12 @@ app.layout = html.Div([
 ])
 
 @app.callback( Output('Price_chart_Sec','figure'),
-               Input('sector_selector', 'value'))
+               Output('Price_chart_stock','figure'),
+               Input('sector_selector', 'value'),
+              Input('stock_selector', 'value'),
+                     )
 
-def update_sector_graph(sector_selector):
+def update_sector_graph(sector_selector, stock_selector):
     # Calculate ETF performance
     Sector = Stock_Master_list.loc[Stock_Master_list['Sector']==sector_selector]['Security']
     chart_performance = df[Sector].iloc[-date:].pct_change(fill_method=None)
@@ -627,7 +641,7 @@ def update_sector_graph(sector_selector):
     Price_chart_Sec = px.line(relative_performance, 
                           y=relative_performance.columns, 
                           x=relative_performance.index, 
-                          title='<i><b>Performance Over Time, by Sector</b></i>',
+                          title=f'<i><b>Performance Over Time, {sector_selector}</b></i>',
                           )
     
     Price_chart_Sec.update_layout(xaxis_title='Date', 
@@ -642,9 +656,38 @@ def update_sector_graph(sector_selector):
                       margin=dict(t=50)  # Reduce the top margin
                       )
     
-    Price_chart_Sec.update_traces(hovertemplate='%{y:.2f}')
+    Price_chart_Sec.update_traces(hovertemplate='%{y:.2f}',connectgaps=True)
     Price_chart_Sec['layout'].pop('updatemenus')
-    return Price_chart_Sec
+
+    # Chart Stock Price
+    chart_performance = df[[stock_selector]].iloc[-date:].pct_change(fill_method=None)
+
+    # Create a dataframe containing relative performance (first row equals 0)
+    relative_performance = ((chart_performance + 1).cumprod() - 1)*100
+    relative_performance.iloc[0] = 0
+        
+    # Chart
+    Price_chart_stock = px.line( relative_performance,
+                            y=relative_performance.columns, 
+                            x=relative_performance.index,
+                            title=f'<b>{stock_selector}</b>' 
+                            )
+    Price_chart_stock.update_layout(xaxis_title='Date', 
+                  yaxis_title='Performance', 
+                  legend_title='Securities',
+                  plot_bgcolor='white',
+                  paper_bgcolor='WhiteSmoke',
+                  font=dict(color='#8F001A'),
+                  title_font=dict(size=20, color='#8F001A'),
+                  xaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
+                  yaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
+                  )
+    Price_chart_stock.update_traces(hovertemplate='%{y:.2f}',connectgaps=True)
+    Price_chart_stock['layout'].pop('updatemenus')
+
+    
+    return Price_chart_Sec, Price_chart_stock
+             
 
 if __name__ == '__main__':
     app.run(debug=True)
