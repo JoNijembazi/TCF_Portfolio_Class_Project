@@ -106,7 +106,6 @@ for x,y in zip(eq_list,Stock_Master_list['Security'].iloc[:-2]):
 
         # Beta
         Stock_Master_list.loc[Stock_Master_list['Security']==y,'Beta'] = ticker_info.get('beta', 'n.a')
-    
 
     except:
         continue
@@ -191,8 +190,7 @@ Stock_Master_list['Annualized Variance (%)'] = ann_var.values
 
     # Calculate Covariance & Correlation Matrix
 cov_matrix = daily_returns.cov() * 253
-corr_matrix = daily_returns.corr()
-    
+corr_matrix = daily_returns.corr()    
 
     # Asset Weights
 weights = np.array(Stock_Master_list['Weight'].iloc[:-2])
@@ -210,7 +208,7 @@ ETF_Weights = pd.DataFrame({
     'Sector': Stock_Master_list['Sector'].iloc[:-2].values,
     'Country': Stock_Master_list['Country'].iloc[:-2].values,
     'Ticker': Stock_Master_list['Security'].iloc[:-2].values})
-
+ETF_Weights = np.array(ETF_Weights)
 
 # Filter Active weights
 
@@ -222,7 +220,6 @@ Actives_Weights= pd.DataFrame({
     'Country': Stock_Master_list['Country'].iloc[:-2],
     'Ticker': Stock_Master_list['Security'].iloc[:-2]})
 Actives_Weights = np.array(Actives_Weights)
-
 
     # Total Weights (ETF + Active)
 
@@ -264,7 +261,7 @@ IPS_Sector_constraint = {'Communication Services': (0, 0.165),
 
 def sum_by_country(weights, country):
     country_mask = np.array(Stock_Master_list['Country'].iloc[:-2] == country)
-    return np.sum(weights[country_mask,0])
+    return np.sum(weights[country_mask])
 
 def sum_by_type(weights, type):
     type_mask = np.array(Stock_Master_list['Type'].iloc[:-2] == type)
@@ -277,7 +274,8 @@ def simple_constraints_func(target):
     return (
         {'type': 'eq', 'fun': lambda x: portfolio_ann_return(x) - target},
         {'type': 'eq', 'fun': lambda x: np.sum(x) - 1},
-        {'type': 'eq', 'fun': lambda x: sum_by_country(x, 'Canada') - 0.40},
+        {'type': 'ineq', 'fun': lambda x: 0.40 - sum_by_country(x, 'Canada')},
+        {'type': 'ineq', 'fun': lambda x: sum_by_country(x, 'Canada') - 0.60 },
         {'type': 'eq', 'fun': lambda x: sum_by_type(x, 'Stock') - 1}
     )
 
@@ -285,40 +283,27 @@ def etf_constraints_func(target):
     constraints = [
         {'type': 'eq', 'fun': lambda x: portfolio_ann_return(x) - target},
         {'type': 'eq', 'fun': lambda x: np.sum(x) - 1},
-        {'type': 'eq', 'fun': lambda x: sum_by_country(x, 'Canada') - 0.40},
+        {'type': 'ineq', 'fun': lambda x: 0.40 - sum_by_country(x, 'Canada')},
+        {'type': 'ineq', 'fun': lambda x: sum_by_country(x, 'Canada') - 0.60 },
         {'type': 'eq', 'fun': lambda x: sum_by_type(x, 'ETF') - 1}
     ]
     for sector, (min_w, max_w) in IPS_Sector_constraint.items():
         sector_mask = np.array(Stock_Master_list['Sector'].iloc[:-2] == sector)
-        constraints.append(
-            [
-            {'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: max_w - np.sum(x[sector_mask])},
-            {'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: np.sum(x[sector_mask]) - min_w}
-            ]
-        )
+        constraints.append({'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: max_w - np.sum(x[sector_mask])})
+        constraints.append({'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: np.sum(x[sector_mask]) - min_w })
     return constraints
 
 def full_constraints_func(target):
-    # Generate a list of constraintsETF_Weights[sector_mask, 0]ptimization.
-
-    # Parameters:
-    # target (float): The target annualized return for the portfolio.
-
-    #Returns:
-    #list: A list of constraint dictionaries for the optimization process.
     constraints = [
         {'type': 'eq', 'fun': lambda x: portfolio_ann_return(x) - target},
         {'type': 'eq', 'fun': lambda x: np.sum(x) - 1},
-        {'type': 'eq', 'fun': lambda x: sum_by_country(x, 'Canada') - 0.40}
+        {'type': 'ineq', 'fun': lambda x: 0.40 - sum_by_country(x, 'Canada')},
+        {'type': 'ineq', 'fun': lambda x: sum_by_country(x, 'Canada') - 0.60 }
     ]
     for sector, (min_w, max_w) in IPS_Sector_constraint.items():
         sector_mask = np.array(Stock_Master_list['Sector'].iloc[:-2] == sector)
-        constraints.append(            
-            [
-            {'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: max_w - np.sum(x[sector_mask])},
-            {'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: np.sum(x[sector_mask]) - min_w}
-            ]
-        )
+        constraints.append({'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: max_w - np.sum(x[sector_mask])})
+        constraints.append({'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: np.sum(x[sector_mask]) - min_w})
     return constraints
 
 # Portfolio Returns 
@@ -337,6 +322,12 @@ def sharpe_ratio(input):
     sharpe = (p_ret - risk_free_rate * 100) / p_vol
     return sharpe, p_vol
 
+
+target_actives =  np.linspace(
+    start=min(annualized_returns[:-2].values),
+    stop=max(annualized_returns[:-2].values),
+    num=200
+            )
 
 target =  np.linspace(
     start=10,
@@ -376,7 +367,7 @@ def full_minimize_for_target(target, initial_w):
     return min_result_object['fun']*100, min_result_object['x']*100
 
 # MINIMIZE
-minimized_results = Parallel(n_jobs=-1)(delayed(simple_minimize_for_target)(t, np.array(Actives_Weights).reshape(-1, 1)) for t in target)
+minimized_results = Parallel(n_jobs=-1)(delayed(simple_minimize_for_target)(t, np.array(Actives_Weights)) for t in target_actives)
 obj_sd, obj_weight = zip(*minimized_results)
 
 sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_results)
@@ -398,7 +389,6 @@ sharpe_etfs, vol_etfs = zip(*sharpe_results)
 
 etf_weights_returned = pd.DataFrame(obj_weight_etfs)
 etf_weights_returned.columns = Stock_Master_list['Security'].iloc[:-2].values
-
 
 # Minimize function for all securities, all constraints
 
@@ -468,7 +458,7 @@ def create_frontier_graph(obj_sds, target, sharpe, Stock_Master_list, title):
     return frontiergraph
 
 # Create graphs for different portfolios
-frontiergraph_actives = create_frontier_graph(obj_sd, target, sharpe, Stock_Master_list, '<i><b>Efficient Frontier vs Assets (Actives Only)</b></i>')
+frontiergraph_actives = create_frontier_graph(obj_sd, target_actives, sharpe, Stock_Master_list, '<i><b>Efficient Frontier vs Assets (Actives Only)</b></i>')
 frontiergraph_etfs = create_frontier_graph(obj_sd_etfs, target, sharpe_etfs, Stock_Master_list, '<i><b>Efficient Frontier vs Assets (ETFs Only)</b></i>')
 frontiergraph_full = create_frontier_graph(obj_sd_full, target, sharpe_full, Stock_Master_list, '<i><b>Efficient Frontier vs Assets (Full Portfolio)</b></i>')
 
@@ -585,7 +575,7 @@ app.layout = html.Div([
         dcc.Tab(label='Efficient Frontier', children=[
             dcc.Graph(figure=frontiergraph_actives,style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
             dcc.Graph(figure=frontiergraph_etfs,style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
-            dcc.Graph(figure=frontiergraph_full,style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'})
+            dcc.Graph(figure=frontiergraph_full,style={'width': '100%', 'margin': '0 auto'})
         ]),
         dcc.Tab(label='Securities List', children=[
             dcc.Graph(figure=securities_list)
