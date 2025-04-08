@@ -15,7 +15,7 @@ from joblib import Parallel, delayed
 import dash
 from dash import dcc, html
 from dash.dependencies import Input, Output
-import plotly.graph_objects as go
+
 
 # Import Data
 
@@ -91,6 +91,7 @@ for x,y in zip(eq_list,Stock_Master_list['Security'].iloc[:-2]):
         Stock_Master_list.loc[Stock_Master_list['Security']==y,'Type'] = 'Stock'
         try:
             etf_sector = pd.Series(yf.Ticker(x).funds_data.sector_weightings).idxmax()
+            etf_beta = ticker_info['beta3Year']
             Stock_Master_list.loc[Stock_Master_list['Security']==y,'Type'] = 'ETF'
         except:
             pass 
@@ -105,7 +106,7 @@ for x,y in zip(eq_list,Stock_Master_list['Security'].iloc[:-2]):
         Stock_Master_list.loc[Stock_Master_list['Security']==y,'Consensus Target'] = ticker_info.get('targetMeanPrice', 'n.a')
 
         # Beta
-        Stock_Master_list.loc[Stock_Master_list['Security']==y,'Beta'] = ticker_info.get('beta', 'n.a')
+        Stock_Master_list.loc[Stock_Master_list['Security']==y,'Beta'] = ticker_info.get('beta', etf_beta)
 
     except:
         continue
@@ -163,10 +164,14 @@ for i in Stock_Master_list.index:
         # # Weight
 Stock_Master_list['Weight'] = Stock_Master_list['Market Value (CAD)'] / Stock_Master_list['Market Value (CAD)'].sum()
 
+
+risk_free_rate = yf.download('^TNX',period='1d',progress=False)['Close'].iloc[-1] / 100
+
 # Portfolio Quant Metrics
     # Calculate Expected Returns
         # # Returns
 daily_returns = df.pct_change()
+
 mean_returns = (daily_returns.mean() * 252)*100
 annualized_returns = (((1 + daily_returns).cumprod().iloc[-1]) ** (252/len(df)) - 1)*100
         
@@ -192,8 +197,13 @@ Stock_Master_list['Annualized Variance (%)'] = ann_var.values
 cov_matrix = daily_returns.cov() * 253
 corr_matrix = daily_returns.corr()    
 
-    # Asset Weights
 weights = np.array(Stock_Master_list['Weight'].iloc[:-2])
+portfolio_weights = np.array(Stock_Master_list[['Weight', 'Type', 'Sector','Country']].iloc[:-2])
+daily_portfolio_returns = daily_returns.dot(weights.T)
+    
+
+# Asset Weights
+
     
     # Sector Weights
 GICs = Stock_Master_list['Sector'].iloc[:-2].unique()
@@ -222,21 +232,7 @@ Actives_Weights = np.array(Actives_Weights)
 
     # Total Weights (ETF + Active)
 
-portfolio_weights = np.array(Stock_Master_list[['Weight', 'Type', 'Sector','Country']].iloc[:-2])
-
 # Portfolio Optimization
-    # Risk Free Rate (10-Year US Treasury)
-risk_free_rate = yf.download('^TNX',period='1d',progress=False)['Close'].iloc[-1] / 100
-
-    # Generate random weights
-weights = np.random.random(size=(10000, len(portfolio_weights)))
-# Normalize weights to unity
-weights /= np.sum(weights, axis=1)[:, np.newaxis]
-
-# Calculate portfolio returns and standard deviations 
-    # (Utilized Element-wise operations and einsum to speed up operation processs)
-port_returns = np.sum(weights * np.array(annualized_returns[:-2].values), axis=1)
-port_sd = np.sqrt(np.einsum('ij,jk,ik->i', weights, cov_matrix, weights))
 
 # Create constraints
     # Define the constraints & Return function
@@ -552,6 +548,8 @@ for stock in daily_returns.columns:
         nbinsx=50  # Increase the number of bins
     ))
 
+
+
 histogram.update_layout(
     title='<i><b>Histogram of Daily Returns (%)</b></i>',
     xaxis_title='Daily Returns',
@@ -561,16 +559,208 @@ histogram.update_layout(
     paper_bgcolor='WhiteSmoke',
     font=dict(color='#8F001A'),
     title_font=dict(size=20, color='#8F001A'),
-    xaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
-    yaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
+    
 )
+
+# Monte Carlo Simulation
+
+def MonteCarloSim(number_of_simulations, level):
+    
+    # Monte Carlo
+    
+    MonteStocks = daily_returns[Stock_Master_list['Security'].iloc[:-2]]
+
+    Calc = pd.DataFrame(np.zeros_like(daily_returns))
+
+    Calc = Calc.set_axis(Stock_Master_list['Security'].iloc[:-2],axis=1)
+    Calc.iloc[0] = Stock_Master_list['Market Value (CAD)'].iloc[:-2]
+
+    for i in range(1,Calc.__len__()):
+        Calc.iloc[i] = Calc.iloc[i-1] * (1+ MonteStocks.iloc[i])
+    Calc['Portfolio Value'] = Calc.sum(axis=1) + Stock_Master_list['Market Value (CAD)'].iloc[-2]
+
+    Log_Returns = np.log(1+Calc['Portfolio Value'].pct_change())
+
+    Log_mean = pd.Series(Log_Returns.mean())
+    Log_var = pd.Series(Log_Returns.var())
+    Log_std = pd.Series(Log_Returns.std())
+
+    random_numbers = np.random.rand(10000)
+    normal_random_numbers = norm.ppf(random_numbers)
+
+    sims = number_of_simulations
+    interval=253
+
+    logreturns_simulated = Log_std.values * norm.ppf(np.random.rand(interval, sims))
+    simplereturns_simulated = np.exp(logreturns_simulated)
+    simplereturns_simulated.shape
+
+    return_list = np.zeros_like(simplereturns_simulated)
+    return_list[0] = Calc['Portfolio Value'][0]
+    
+    for t in range(1, interval):
+        return_list[t] = return_list[t - 1] * simplereturns_simulated[t]
+    
+        # Plot the Simulation 
+    import plotly.graph_objects as go
+
+    MonteCarlo = go.Figure()
+
+    for i in range(return_list.shape[1]):
+        MonteCarlo.add_trace(go.Scatter(
+            y=return_list[:, i],
+            mode='lines',
+            line=dict(width=0.5),
+            opacity=0.7,
+            name=f'Simulation {i+1}',
+            hoverinfo='skip',
+        ))
+
+    MonteCarlo.update_layout(
+        title='Monte Carlo Simulated Portfolio Returns',
+        xaxis_title='Time (Days)',
+        yaxis_title='Portfolio Value',
+        template='plotly_white',
+        showlegend=False,
+    )    
+    mean_simulated_return = np.mean(return_list[-1] / return_list[0] - 1) * 100
+        # Add a text annotation for the mean return
+    MonteCarlo.add_annotation(
+        x=0.5,
+        y=1.05,
+        xref="paper",
+        yref="paper",
+        text=f"Mean Simulated Return: {mean_simulated_return:.2f}%",
+        showarrow=False,
+        font=dict(size=14, color="black"),
+        align="center",
+        bgcolor="white",
+        bordercolor="black",
+    )
+
+
+    MonteCarlo.update_layout(title = 'Monter Carlo Simulated Portfolio Returns',
+                      hovermode ='closest',
+                      plot_bgcolor='white',
+                      paper_bgcolor='WhiteSmoke',
+                      font=dict(color='#8F001A'),
+                      title_font=dict(size=20, color='#8F001A'),
+                      xaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
+                      yaxis=dict(showline=False, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
+                      legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),)
+    # VaR Graphs
+    mean_return = np.mean(daily_portfolio_returns)
+    std_dev = np.std(daily_portfolio_returns)
+
+    # Calculate the VaR at 95% confidence level using the Z-score
+    confidence_level = level
+    z_score = norm.ppf(1 - confidence_level)
+    VaR_variance_covariance = mean_return + z_score * std_dev
+        
+    # Plot Graph
+    VaR_PDF = go.Figure()
+    
+    x = np.linspace(mean_return - 3 * std_dev, mean_return + 3 * std_dev, 1000)
+    y = norm.pdf(x, mean_return, std_dev)
+    
+    VaR_PDF.add_trace(go.Scatter(x=x, y=y, mode='lines', name='PDF', line_color='blue', line_width=2))
+
+    VaR_PDF.add_vline(x= VaR_variance_covariance, 
+                      line_color='red', 
+                      line_width=1, 
+                      line_dash='dash', 
+                      name='VaR',
+                      annotation=dict(text=f"VaR: {VaR_variance_covariance:.2f}%" +
+                                      f"<br>Confidence Level: {confidence_level}%", 
+                                      showarrow=True, arrowhead=2, ax=0, ay=-40))
+   
+
+    VaR_PDF.update_layout(xaxis_title='Portfolio of Returns (%)',
+                      yaxis_title='Density of Returns (%)',
+                      
+                      # This graph represents the normal distribution of portfolio returns, 
+                      # highlighting the Value at Risk (VaR) at a specified confidence level. 
+                      # It helps users understand the risk of potential losses in the portfolio.
+                      
+                      title = 'Normal Distribution of Returns including VaR',
+                      hovermode ='closest',
+                      plot_bgcolor='white',
+                      paper_bgcolor='WhiteSmoke',
+                      font=dict(color='#8F001A'),
+                      title_font=dict(size=20, color='#8F001A'),
+                      xaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
+                      yaxis=dict(showline=False, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
+                      legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),)
+    return MonteCarlo, VaR_PDF
+
+# Portfolio Statistics
+
+def PortfolioStats(Mr, weights=weights,annualized_returns=annualized_returns, risk_free_rate=risk_free_rate):
+    # Compute Sharpe Ratio, Treynor Ratio, Alpha, and Combined Beta of the Portfolio
+    
+    weights = np.array(weights)  # Ensure weights is a numpy array
+    annualized_returns = np.array(annualized_returns[:-2])  # Align dimensions
+    portfolio_return = np.sum(weights * annualized_returns)  # Portfolio return
+    portfolio_volatility = np.sqrt(np.dot(weights, np.dot(cov_matrix.values, weights)))  # Portfolio volatility
+    portfolio_beta = np.sum(weights * Stock_Master_list['Beta'].iloc[:-2].astype(float))  # Combined portfolio beta
+    
+
+    # Sharpe Ratio
+    
+    sharpe_ratio = float(portfolio_return - risk_free_rate * 100) / (portfolio_volatility*100)
+    # Treynor Ratio
+
+    treynor_ratio = float(portfolio_return - risk_free_rate * 100) / portfolio_beta
+    # CAPM Alpha
+    market_return = Mr
+    alpha = float(portfolio_return - (risk_free_rate * 100 + portfolio_beta * (market_return - risk_free_rate * 100)))
+    
+    # Combined Beta
+    combined_beta = portfolio_beta
+    # Create a modern table to display the portfolio statistics
+    # Ensure metrics are defined and valid
+    sharpe_ratio = sharpe_ratio if 'sharpe_ratio' in locals() else 0
+    treynor_ratio = treynor_ratio if 'treynor_ratio' in locals() else 0
+    alpha = alpha if 'alpha' in locals() else 0
+    combined_beta = combined_beta if 'combined_beta' in locals() else 0
+
+    stats_table = go.Figure(data=[go.Table(
+        header=dict(values=['Metric', 'Value'],
+                    fill_color='#8F001A',
+                    align='center',
+                    font=dict(color='white', size=14),
+                    line_color='white'),
+        cells=dict(values=[
+            ['Sharpe Ratio', 'Treynor Ratio', 'CAPM Alpha', 'Combined Beta'],
+            [f'{sharpe_ratio:.2f}', f'{treynor_ratio:.2f}', f'{alpha:.2f}', f'{combined_beta:.2f}']
+        ],
+        fill_color='white',
+        align='left',
+        font=dict(color='black', size=12),
+        line_color='white'),
+    )])
+
+    stats_table.update_layout(title='<i><b>Select Risk Portfolio Metrics</b></i>',
+                              plot_bgcolor='white',
+                              paper_bgcolor='WhiteSmoke',
+                              font=dict(color='#8F001A'),
+                              title_font=dict(size=20, color='#8F001A'),
+                              height=200)  # Adjust the height of the table
+    return stats_table
 
 # Display Dashboard
 
 app = dash.Dash(__name__)
 
 app.layout = html.Div([
-    html.H1('Portfolio Optimization Dashboard', style={'textAlign': 'center', 'color': '#8F001A', 'font-family': 'Tahoma','backgroundColor': 'WhiteSmoke'}), 
+    html.H1('Portfolio Optimization Dashboard', 
+            style={'textAlign': 'center', 
+                    'color': '#8F001A', 
+                    'font-family': 'Tahoma', 
+                    'backgroundColor': 'WhiteSmoke', 
+                    'margin-top': '0px',
+                    'margin-bottom': '0px'}
+    ), 
     dcc.Tabs([
         dcc.Tab(label='Efficient Frontier', children=[
             html.Div([
@@ -591,12 +781,14 @@ app.layout = html.Div([
                     ),
                     dcc.Loading(
                         id="loading-frontiergraph_actives",
-                        type="circle",
+                        type="default",
+                        overlay_style= {'visibility': 'visible', 'filter': 'blur(2px)'},
                         children=dcc.Graph(id='frontiergraph_actives', style={'width': '100%', 'margin': '0 auto'})
                     ),
                     dcc.Loading(
                         id="loading-table_actives",
-                        type="circle",
+                        type="default",
+                        overlay_style= {'visibility': 'visible', 'filter': 'blur(2px)'},
                         children=dcc.Graph(id='table_actives', style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'})
                     ),
                 ], style={'width': '33%', 'display': 'inline-block', 'verticalAlign': 'top','backgroundColor': 'WhiteSmoke'}),
@@ -618,13 +810,15 @@ app.layout = html.Div([
                     ),
                     dcc.Loading(
                         id="loading-frontiergraph_etfs",
-                        type="circle",
+                        type="default",
+                        overlay_style= {'visibility': 'visible', 'filter': 'blur(2px)'},
                         children=dcc.Graph(id='frontiergraph_etfs', style={'width': '100%', 'margin': '0 auto'})
                     ),
                     dcc.Loading(
                         id="loading-table_etfs",
-                        type="circle",
-                        children=dcc.Graph(id='table_etfs', style={'width': '100%', 'margin': '0 auto'})
+                        type="default",
+                        overlay_style= {'visibility': 'visible', 'filter': 'blur(2px)'},
+                        children=dcc.Graph(id='table_etfs', style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'})
                     ),
                 ], style={'width': '33%', 'display': 'inline-block', 'verticalAlign': 'top','backgroundColor': 'WhiteSmoke'}),
                 html.Div([
@@ -644,12 +838,14 @@ app.layout = html.Div([
                     ),
                     dcc.Loading(
                         id="loading-frontiergraph_full",
-                        type="circle",
+                        type="default",
+                        overlay_style= {'visibility': 'visible', 'filter': 'blur(2px)'},
                         children=dcc.Graph(id='frontiergraph_full', style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'})
                     ),
                     dcc.Loading(
                         id="loading-table_full",
-                        type="circle",
+                        type="default",
+                        overlay_style= {'visibility': 'visible', 'filter': 'blur(2px)'},
                         children=dcc.Graph(id='table_full', style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'})
                     ),
                 ], style={'width': '33%', 'display': 'inline-block', 'verticalAlign': 'top'}),
@@ -659,6 +855,7 @@ app.layout = html.Div([
         dcc.Tab(label='Securities List', children=[
             dcc.Graph(figure=securities_list, style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'}),
         ]),
+        
         dcc.Tab(label='Performance of Holdings', children=[
             html.Div([
                 dcc.Dropdown(
@@ -679,7 +876,7 @@ app.layout = html.Div([
                     value=Stock_Master_list['Security'].iloc[:-2][0],
                     clearable=False,
                     style={
-                        'width': '50%',
+                        'width': '20%',
                         'margin': '0 auto',
                         'display': 'inline-block',
                         'font-family': 'Tahoma',
@@ -688,12 +885,96 @@ app.layout = html.Div([
                 dcc.Graph(id='Price_chart_Sec', style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
                 dcc.Graph(id='Price_chart_stock', style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
                 dcc.Graph(figure=Return_Vol_graph,style={'width': '100%', 'margin': '0 auto',})
-            ], style={'textAlign': 'center', 'margin-bottom': '20px', 'backgroundColor': 'WhiteSmoke', 'font-family': 'Tahoma'}),
+            ], style={'textAlign': 'center', 'margin-bottom': '0px', 'backgroundColor': 'WhiteSmoke', 'font-family': 'Tahoma'}),
         ]),
+                
         dcc.Tab(label='Portfolio Statistics', children=[
+            html.Div([
+                html.H4('Number of Simulations', 
+                        style={'textAlign': 'center', 
+                        'color': '#8F001A', 
+                        'font-family': 'Tahoma',
+                        'display': 'inline-block', 
+                        'backgroundColor': 'WhiteSmoke', 
+                        'margin-top': '0px',
+                        'margin-bottom': '0px'}),
+
+                html.H4('VaR Confidence Interval', 
+                        style={'textAlign': 'center', 
+                        'color': '#8F001A', 
+                        'font-family': 'Tahoma',
+                        'display': 'inline-block', 
+                        'backgroundColor': 'WhiteSmoke', 
+                        'margin-top': '0px',
+                        'margin-bottom': '0px'}),
+
+                dcc.Input(id='sim_number', 
+                          type='number', 
+                          value=1000, 
+                          min=1, 
+                          max=10000, 
+                          step=1, 
+                          style={'width': '20%', 
+                                 'margin': 'auto', 
+                                 'display': 'inline-block', 
+                                 'font-family': 'Tahoma',
+                                 'font-size': '18px',
+                                 'textAlign': 'center',
+                                 }
+                        ),                        
+                dcc.Dropdown(
+                    id='confidence_level',
+                    options=[{'label': f'{int(level*100)}%', 'value': level} for level in [0.90, 0.95, 0.99]],
+                    value=0.95,
+                    clearable=False,
+                    style={
+                        'width': '50%',
+                        'margin': '0 auto',
+                        'display': 'inline-block',
+                        'font-family': 'Tahoma',
+                        'font-size': '18px',
+                        'textAlign': 'center',
+                    },
+                ),                
+                dcc.Loading(
+                    id="loading-MonteCarlo",
+                    type="default",
+                    overlay_style= {'visibility': 'visible', 'filter': 'blur(2px)'},
+                    children=dcc.Graph(id='MonteCarlo', style={'width': '100%', 'margin': '0 auto',})
+                ),
+                dcc.Loading(
+                    id="loading-VaR_PDF",
+                    type="default",
+                    overlay_style= {'visibility': 'visible', 'filter': 'blur(2px)'},
+                    children=dcc.Graph(id='VaR_PDF', style={'width': '100%', 'margin': '0 auto',})
+                    )
+            ], style={'textAlign': 'center', 'margin-bottom': '0px', 'backgroundColor': 'WhiteSmoke', 'font-family': 'Tahoma'}),
+            html.Div([
+            dcc.Loading(
+                    id="loading-stats_table",
+                    type="default",
+                    overlay_style= {'visibility': 'visible', 'filter': 'blur(2px)'},
+                    children=dcc.Graph(id='stats_table', style={'width': '100%', 'margin': '0 auto',})
+                    ),
+            dcc.Slider(
+                    id='Expected_Market_Return',      
+                    min=-25,
+                    max=30,
+                    value=10,
+                    marks=None,
+                    step=0.1,
+                    tooltip={
+                        "placement": "bottom", 
+                        "always_visible": True,
+                        "style": {'font-family': 'Tahoma', 'color': 'white'},
+                        "template": 'Expected Market Return: {value}%'
+                    }),
             dcc.Graph(figure=histogram,style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
-            dcc.Graph(figure=corr_matrix_graph, style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'})
-        ]),
+            
+            dcc.Graph(figure=corr_matrix_graph, style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
+
+            ],style={'textAlign': 'center', 'margin-bottom': '0 px', 'backgroundColor': 'WhiteSmoke', 'font-family': 'Tahoma'}),
+    ], style={'font-family': 'Tahoma', 'color': '#8F001A', 'backgroundColor': 'WhiteSmoke', 'margin-top': '0px'}),
     ], style={'font-family': 'Tahoma', 'color': '#8F001A', 'backgroundColor': 'WhiteSmoke'}),
 ])
 
@@ -794,6 +1075,28 @@ def update_etf(etf_slider):
         obj_sd, sharpe, obj_weight = minimum_variance_etf(target, ETF_Weights)
         frontiergraph_etfs, table_etfs = create_frontier_graph(obj_sd, obj_weight,target, sharpe, '<i><b>Efficient Frontier (ETFs Only)</b></i>')
         return frontiergraph_etfs, table_etfs
+
+@app.callback(
+    Output('MonteCarlo', 'figure'),
+    Output('VaR_PDF', 'figure'),
+    Input('sim_number', 'value'),
+    Input('confidence_level', 'value'),
+)
+def update_montecarlo(sim_number,confidence_level):
+    number_of_simulations = sim_number
+    level = confidence_level 
+    MonteCarlo, VaR_PDF = MonteCarloSim(number_of_simulations, level)
+    return MonteCarlo, VaR_PDF
+
+@app.callback(
+    Output('stats_table', 'figure'),
+    Input('Expected_Market_Return', 'value'),
+)
+def update_stats(Expected_Return):
+    Mr = float(Expected_Return) # Ensure the value is converted to float
+    stats_table = PortfolioStats(Mr, weights=weights, annualized_returns=annualized_returns, risk_free_rate=risk_free_rate)
+    return stats_table
+
 
 if __name__ == '__main__':
     app.run(debug=True)

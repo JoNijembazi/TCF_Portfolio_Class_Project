@@ -2,8 +2,6 @@ import yfinance as yf
 import pandas as pd
 
 
-Ticker = yf.Ticker('AAPL')
+Ticker = yf.Ticker('APO')
 
-Ticker.get_info('beta')
-
-
+print(Ticker.info)
