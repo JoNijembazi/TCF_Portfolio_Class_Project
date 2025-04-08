@@ -383,7 +383,7 @@ sharpe_results_full = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minim
     # Extract the results
 obj_sd_full,obj_weight_full = zip(*minimized_results_full)
 sharpe_full, vol_full = zip(*sharpe_results_full)
-print(np.argmax(sharpe_full))
+
 full_weights_returned = pd.DataFrame(obj_weight_full)
 full_weights_returned.columns = Stock_Master_list['Security'].iloc[:-2].values
 
@@ -483,8 +483,6 @@ corr_matrix_graph = px.imshow(corr_matrix.round(2),
             labels=dict(color='Correlation'),
             text_auto=True,
             color_continuous_scale='RdBu',
-            width=1600,
-            height=800
             )
 corr_matrix_graph.update_layout(plot_bgcolor='white',
                   paper_bgcolor='WhiteSmoke',
@@ -588,7 +586,7 @@ app.layout = html.Div([
                             "placement": "bottom", 
                             "always_visible": True,
                             "style": {'font-family': 'Tahoma', 'color': 'white'},
-                            "template": 'Max Target Return{value}%'
+                            "template": 'Max Target Return: {value}%'
                         },
                     ),
                     dcc.Loading(
@@ -615,7 +613,7 @@ app.layout = html.Div([
                             "placement": "bottom", 
                             "always_visible": True,
                             "style": {'font-family': 'Tahoma', 'color': 'white'},
-                            "template": '{value}%'
+                            "template": 'Max Target Return: {value}%'
                         }, 
                     ),
                     dcc.Loading(
@@ -641,7 +639,7 @@ app.layout = html.Div([
                             "placement": "bottom", 
                             "always_visible": True,
                             "style": {'font-family': 'Tahoma', 'color': 'white'},
-                            "template": '{value}%'
+                            "template": 'Max Target Return: {value}%'
                         },
                     ),
                     dcc.Loading(
@@ -659,7 +657,7 @@ app.layout = html.Div([
         ]),
         
         dcc.Tab(label='Securities List', children=[
-            dcc.Graph(figure=securities_list, layout={'height': 'auto'}, style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'}),
+            dcc.Graph(figure=securities_list, style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'}),
         ]),
         dcc.Tab(label='Performance of Holdings', children=[
             html.Div([
@@ -693,8 +691,8 @@ app.layout = html.Div([
             ], style={'textAlign': 'center', 'margin-bottom': '20px', 'backgroundColor': 'WhiteSmoke', 'font-family': 'Tahoma'}),
         ]),
         dcc.Tab(label='Portfolio Statistics', children=[
-            dcc.Graph(figure=histogram),
-            dcc.Graph(figure=corr_matrix_graph, style={'width': '100%', 'margin': '0 auto',})
+            dcc.Graph(figure=histogram,style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
+            dcc.Graph(figure=corr_matrix_graph, style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'})
         ]),
     ], style={'font-family': 'Tahoma', 'color': '#8F001A', 'backgroundColor': 'WhiteSmoke'}),
 ])
