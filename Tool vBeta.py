@@ -305,9 +305,7 @@ def full_constraints_func(target):
 # Portfolio Returns  & Volatility
 
 def portfolio_ann_return(weights):
-    return np.sum(weights * annualized_returns[:-2])
-
-    # Portfolio Volatility 
+    return np.sum(weights * annualized_returns[:-2]) 
 def portfolio_volatility(weights):
     return np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
 
@@ -317,7 +315,6 @@ def sharpe_ratio(input):
     p_vol = input[0]
     sharpe = (p_ret - risk_free_rate * 100) / p_vol
     return sharpe, p_vol
-
 
 target =  np.linspace(
         start=10,
@@ -437,12 +434,14 @@ def create_frontier_graph(obj_sds, obj_weight, target, sharpe, title):
                       title_font=dict(size=20, color='#8F001A'),
                       xaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
                       yaxis=dict(showline=False, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
+                      legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
                       )
     frontiergraph.add_trace(go.Scatter(
                         x=[obj_sds[np.argmax(sharpe)]],
                         y=[target[np.argmax(sharpe)]],
                         mode='markers',
-                        name='Optimal Portfolio',                        marker=dict(color='gold', size=9, symbol='star'),
+                        name='Optimal Portfolio',                        
+                        marker=dict(color='gold', size=9, symbol='star'),
                         hovertemplate="Sharpe Ratio: %{customdata}",
                         customdata=[sharpe[np.argmax(sharpe)]]
                     )) 
@@ -463,34 +462,16 @@ def create_frontier_graph(obj_sds, obj_weight, target, sharpe, title):
         line_color='white'),
     )])
 
-    optimal_portfolio_table.update_layout(title='<i><b>Optimal Portfolio Composition</b></i>',
+    optimal_portfolio_table.update_layout(title='<i><b>Optimal Composition</b></i>',
                                           plot_bgcolor='white',
                                           paper_bgcolor='WhiteSmoke',
                                           font=dict(color='#8F001A'),
                                           title_font=dict(size=20, color='#8F001A'),
                                           height=30 * (len(Stock_Master_list) + 1))  
-    # frontiergraph.add_trace(go.Table(
-    #                                 header=dict(values=['Security', 'Weight (%)'],
-    #                                 fill_color='#8F001A',
-    #                                 align='left',
-    #                                 font=dict(color='white', size=6),
-    #                                 line_color='white'),
-    #                                 cells=dict(values=[
-    #                                 Stock_Master_list['Security'].iloc[:-2].values,
-    #                                 [f'{weight:.2f}' for weight in obj_weight[np.argmax(sharpe)]]
-    #                                 ],
-    #                                 fill_color='white',
-    #                                 align='left',
-    #                                 font=dict(color='black', size=6),
-    #                                 line_color='white'),
-    #                                 domain=dict(x=[0.75, 1], y=[0, 0.3])  # Position the table at the bottom right
-    #                                 ))
+    
     return frontiergraph, optimal_portfolio_table
 
 # Create graphs for different portfolios
-frontiergraph_actives, table_actives = create_frontier_graph(obj_sd, obj_weight_full, target, sharpe, '<i><b>Efficient Frontier vs Assets (Actives Only)</b></i>')
-frontiergraph_etfs,table_etfs = create_frontier_graph(obj_sd_etfs, obj_weight_etfs, target, sharpe_etfs, '<i><b>Efficient Frontier vs Assets (ETFs Only)</b></i>')
-frontiergraph_full,table_full = create_frontier_graph(obj_sd_full, obj_weight, target, sharpe_full, '<i><b>Efficient Frontier vs Assets (Full Portfolio)</b></i>')
 
 # ------------------
 
@@ -514,23 +495,29 @@ corr_matrix_graph.update_layout(plot_bgcolor='white',
 # ------------------
 
 # Portfolio Return to Volatility
-Return_Vol_graph = px.scatter(Stock_Master_list,x='Annualized Volatility (%)',y='Annualized Returns (%)',color='Country',hover_name='Security')
-Return_Vol_graph.update_layout(title='<i><b>Portfolio Return to Volatility</b></i>',
-                  xaxis_title='Annualized Volatility (%)',
-                  yaxis_title='Annualized Returns (%)',
+Return_Vol_graph = px.scatter(Stock_Master_list,x='Annualized Volatility (%)',y='Annualized Returns (%)',color='Country',hover_name='Security',)
+Return_Vol_graph.update_layout(title='<i><b>TCF Holdings Return to Volatility</b></i>',
+                  xaxis_title='Annualized Volatility(%)',
+                  yaxis_title='Annualized Returns(%)',
                   plot_bgcolor='white',
                   paper_bgcolor='white',
                   font=dict(color='#8F001A'),
+                  hovermode='closest',
+                  hoverlabel=dict(
+                      bgcolor="white",
+                      font_size=12,
+                      font_family="Tahoma"
+                  ),
                   title_font=dict(size=20, color='#8F001A'),
                   xaxis=dict(showline=True, linewidth=1, linecolor='#8F001A', showgrid=False, zeroline=False),
                   yaxis=dict(showline=True, linewidth=1, linecolor='#8F001A', showgrid=False, zeroline=False),
                   )
+Return_Vol_graph.update_traces(marker=dict(size=10))
 
 # ------------------
 
 # Price_performance
 date = len(df)
-
  
 # Table of Stock Master List
 securities_list = go.Figure(data=[go.Table(
@@ -586,44 +573,64 @@ app.layout = html.Div([
     dcc.Tabs([
         dcc.Tab(label='Efficient Frontier', children=[
             html.Div([
-                dcc.Slider(
-                    id='active_slider',
-                    min=10,
-                    max=25,
-                    value=20,
-                    marks={i: str(i) for i in range(10, 21)},
-                    step=0.1,
-                    tooltip={
-                        "placement": "bottom", 
-                        "always_visible": True,
-                        "style": {'font-family': 'Tahoma', 'color': '#8F001A'},
-                        "template": '{value}%'
-                    },
-                    vertical=True
-                ),
-                dcc.Graph(id='frontiergraph_actives', style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
-                dcc.Graph(figure=frontiergraph_etfs, style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
-            ]),
-            html.Div([
-                dcc.Graph(id='frontiergraph_full', style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'}),
-                dcc.Graph(id='table_full', style={'width': '50', 'margin': '0 auto', 'border-top': '0px solid #8F001A'}),
-                dcc.Slider(
-                    id='full_slider',
-                    min=10,
-                    max=25,
-                    value=20,
-                    marks={i: str(i) for i in range(10, 21)},
-                    step=0.1,
-                    tooltip={
-                        "placement": "bottom", 
-                        "always_visible": True,
-                        "style": {'font-family': 'Tahoma', 'color': '#8F001A'},
-                        "template": '{value}%'
-                    },
-                    vertical=True
-                ),
-            ], style={'textAlign': 'center', 'margin-bottom': '20px', 'backgroundColor': 'WhiteSmoke', 'font-family': 'Tahoma'}),
+                html.Div([
+                    dcc.Slider(
+                        id='active_slider',
+                        min=10,
+                        max=30,
+                        value=20,
+                        marks=None,
+                        step=0.1,
+                        tooltip={
+                            "placement": "bottom", 
+                            "always_visible": True,
+                            "style": {'font-family': 'Tahoma', 'color': 'white'},
+                            "template": '{value}%'
+                        },
+                    ),
+                    dcc.Graph(id='frontiergraph_actives', style={'width': '100%', 'margin': '0 auto'}),
+                    dcc.Graph(id='table_actives', style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'}),
+                ], style={'width': '33%', 'display': 'inline-block', 'verticalAlign': 'top','backgroundColor': 'WhiteSmoke'}),
+                
+                html.Div([
+                    dcc.Slider(
+                        id='etf_slider',
+                        min=10,
+                        max=30,
+                        value=20,
+                        marks=None,
+                        step=0.1,
+                        tooltip={
+                            "placement": "bottom", 
+                            "always_visible": True,
+                            "style": {'font-family': 'Tahoma', 'color': 'white'},
+                            "template": '{value}%'
+                        }, 
+                    ),
+                    dcc.Graph(id='frontiergraph_etfs', style={'width': '100%', 'margin': '0 auto'}),
+                    dcc.Graph(id='table_etfs', style={'width': '100%', 'margin': '0 auto'}),
+                ], style={'width': '33%', 'display': 'inline-block', 'verticalAlign': 'top','backgroundColor': 'WhiteSmoke'}),
+                html.Div([
+                    dcc.Slider(
+                        id='full_slider',
+                        min=10,
+                        max=30,
+                        value=20,
+                        marks=None,
+                        step=0.1,
+                        tooltip={
+                            "placement": "bottom", 
+                            "always_visible": True,
+                            "style": {'font-family': 'Tahoma', 'color': 'white'},
+                            "template": '{value}%'
+                        },
+                    ),
+                    dcc.Graph(id='frontiergraph_full', style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'}),
+                    dcc.Graph(id='table_full', style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'}),
+                ], style={'width': '33%', 'display': 'inline-block', 'verticalAlign': 'top'}),
+            ], style={'display': 'flex', 'justify-content': 'space-between', 'align-items': 'flex-start','backgroundColor': 'WhiteSmoke'}),
         ]),
+        
         dcc.Tab(label='Securities List', children=[
             dcc.Graph(figure=securities_list)
         ]),
@@ -639,8 +646,6 @@ app.layout = html.Div([
                         'margin': '0 auto',
                         'display': 'inline-block',
                         'font-family': 'Tahoma',
-                        'border': '1px solid #8F001A',
-                        'border-radius': '5px',
                     },
                 ),
                 dcc.Dropdown(
@@ -653,13 +658,11 @@ app.layout = html.Div([
                         'margin': '0 auto',
                         'display': 'inline-block',
                         'font-family': 'Tahoma',
-                        'border': '1px solid #8F001A',
-                        'border-radius': '5px',
-
                     }
                 ),
                 dcc.Graph(id='Price_chart_Sec', style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
                 dcc.Graph(id='Price_chart_stock', style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
+                dcc.Graph(figure=Return_Vol_graph,style={'width': '100%', 'margin': '0 auto',})
             ], style={'textAlign': 'center', 'margin-bottom': '20px', 'backgroundColor': 'WhiteSmoke', 'font-family': 'Tahoma'}),
         ]),
         dcc.Tab(label='Histogram of Daily Returns', children=[
@@ -668,12 +671,8 @@ app.layout = html.Div([
         dcc.Tab(label='Correlation of Portfolio Stocks', children=[
             dcc.Graph(figure=corr_matrix_graph, style={'width': '100%', 'margin': '0 auto'})
         ]),
-        dcc.Tab(label='Return-Volatility Plot', children=[
-            dcc.Graph(figure=Return_Vol_graph)
-        ])
     ], style={'font-family': 'Tahoma'})
 ])
-
 
 # Price Charts
 @app.callback( Output('Price_chart_Sec','figure'),
@@ -738,33 +737,40 @@ def update_graphs(sector_selector, stock_selector):
     Price_chart_stock.update_traces(hovertemplate='%{y:.2f}',connectgaps=True)
     Price_chart_stock['layout'].pop('updatemenus')    
     return Price_chart_Sec, Price_chart_stock
+
 # Optimal Portfolio Charts             
 @app.callback(
     Output('frontiergraph_full', 'figure'),
     Output('table_full', 'figure'),
-    Output('frontiergraph_actives', 'figure'),
-    Output('table_actives', 'figure'),
-    # Output('frontiergraph_etfs', 'figure'),
-    # Output('table_etfs', 'figure'),
     Input('full_slider','value'),
-    Input('active_slider','value'),
-    # Input('etf_slider','value'),
-)
-def update_frontier_graph(full_slider,active_slider,etf_slider):
+    )
+def update_full(full_slider):
     target =  np.linspace(start=10, stop=full_slider, num=100)
     obj_sd, sharpe, obj_weight = minimum_variance_full(target, portfolio_weights)
-    frontiergraph_full,table_full = create_frontier_graph(obj_sd, obj_weight,target, sharpe, '<i><b>Efficient Frontier (Full Portfolio)</b></i>')
+    frontiergraph_full, table_full = create_frontier_graph(obj_sd, obj_weight,target, sharpe, '<i><b>Efficient Frontier (Full Portfolio)</b></i>')
+    return frontiergraph_full, table_full
 
+@app.callback(
+    Output('frontiergraph_actives', 'figure'),
+    Output('table_actives', 'figure'),
+    Input('active_slider','value'),
+)
+def update_active(active_slider):
     target =  np.linspace(start=10, stop=active_slider, num=100)
-    obj_sd, sharpe, obj_weight = minimum_variance_full(target, portfolio_weights)
+    obj_sd, sharpe, obj_weight = minimum_variance_actives(target, Actives_Weights)
     frontiergraph_actives, table_actives = create_frontier_graph(obj_sd, obj_weight,target, sharpe, '<i><b>Efficient Frontier (Active Positions)</b></i>')
-    
-    target =  np.linspace(start=10, stop=etf_slider, num=100)
-    obj_sd, sharpe, obj_weight = minimum_variance_full(target, portfolio_weights)
-    frontiergraph_etfs, table_etfs = create_frontier_graph(obj_sd, obj_weight,target, sharpe, '<i><b>Efficient Frontier (ETFs Only)</b></i>')
+    return frontiergraph_actives, table_actives
 
-    return frontiergraph_full, table_full, frontiergraph_etfs, table_etfs
+@app.callback(
+    Output('frontiergraph_etfs', 'figure'),
+    Output('table_etfs', 'figure'),
+    Input('etf_slider','value'),
+)
+def update_etf(etf_slider):
+        target =  np.linspace(start=10, stop=etf_slider, num=100)
+        obj_sd, sharpe, obj_weight = minimum_variance_etf(target, ETF_Weights)
+        frontiergraph_etfs, table_etfs = create_frontier_graph(obj_sd, obj_weight,target, sharpe, '<i><b>Efficient Frontier (ETFs Only)</b></i>')
+        return frontiergraph_etfs, table_etfs
 
 if __name__ == '__main__':
     app.run(debug=True)
-
