@@ -283,10 +283,10 @@ def etf_constraints_func(target):
         {'type': 'ineq', 'fun': lambda x: sum_by_country(x, 'Canada') - 0.40 },
         {'type': 'eq', 'fun': lambda x: sum_by_type(x, 'ETF') - 1}
     ]
-    # for sector, (min_w, max_w) in IPS_Sector_constraint.items():
-    #     sector_mask = np.array(Stock_Master_list['Sector'].iloc[:-2] == sector)
-    #     constraints.append({'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: max_w - np.sum(x[sector_mask])})
-    #     constraints.append({'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: np.sum(x[sector_mask]) - min_w })
+    for sector, (min_w, max_w) in IPS_Sector_constraint.items():
+        sector_mask = np.array(Stock_Master_list['Sector'].iloc[:-2] == sector)
+        constraints.append({'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: max_w - np.sum(x[sector_mask])})
+        constraints.append({'type': 'ineq', 'fun': lambda x, sector_mask=sector_mask, max_w=max_w: np.sum(x[sector_mask]) - min_w })
     return constraints
 
 def full_constraints_func(target):
@@ -360,17 +360,18 @@ obj_sd, obj_weight = zip(*minimized_results)
 sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_results)
     # Extract the results
 sharpe,vol = zip(*sharpe_results)
+
 port_returns_actives = pd.DataFrame(np.array([portfolio_ann_return(i) for i in obj_weight]))
 # Combine the weights and names of Active Weights securities
-
-
+active_weights_returned = pd.DataFrame(obj_weight)
+active_weights_returned.columns = Stock_Master_list['Security'].iloc[:-2].values
 # Minimize function for etfs securities, all constraints
 
 minimized_results_etfs = Parallel(n_jobs=-1)(delayed(etf_minimize_for_target)(t, np.array(ETF_Weights)) for t in target)
-sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)((sd, weights)) for sd, weights in minimized_results_etfs)
+sharpe_results_etfs = Parallel(n_jobs=-1)(delayed(sharpe_ratio)((sd, weights)) for sd, weights in minimized_results_etfs)
     # Extract the results
 obj_sd_etfs,obj_weight_etfs = zip(*minimized_results_etfs)
-sharpe_etfs, vol_etfs = zip(*sharpe_results)
+sharpe_etfs, vol_etfs = zip(*sharpe_results_etfs)
 
 etf_weights_returned = pd.DataFrame(obj_weight_etfs)
 etf_weights_returned.columns = Stock_Master_list['Security'].iloc[:-2].values
@@ -378,31 +379,32 @@ etf_weights_returned.columns = Stock_Master_list['Security'].iloc[:-2].values
 # Minimize function for all securities, all constraints
 
 minimized_results_full = Parallel(n_jobs=-1)(delayed(full_minimize_for_target)(t, np.array(portfolio_weights)) for t in target)
-sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_results_full)
+sharpe_results_full = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_results_full)
     # Extract the results
 obj_sd_full,obj_weight_full = zip(*minimized_results_full)
-sharpe_full, vol_full = zip(*sharpe_results)
+sharpe_full, vol_full = zip(*sharpe_results_full)
+print(np.argmax(sharpe_full))
 full_weights_returned = pd.DataFrame(obj_weight_full)
 full_weights_returned.columns = Stock_Master_list['Security'].iloc[:-2].values
 
 def minimum_variance_full(target_range,weights):
-    minimized_results_full = Parallel(n_jobs=-1)(delayed(full_minimize_for_target)(t, np.array(weights)) for t in target_range)
+    minimized_results = Parallel(n_jobs=-1)(delayed(full_minimize_for_target)(t, np.array(weights)) for t in target_range)
     sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_results_full)
-    obj_sd_full,obj_weight = zip(*minimized_results_full)
+    obj_sd_full,obj_weight = zip(*minimized_results)
     sharpe, vol = zip(*sharpe_results)
     return obj_sd_full, sharpe, obj_weight
 
 def minimum_variance_etf(target_range,weights):
     minimized_results = Parallel(n_jobs=-1)(delayed(etf_minimize_for_target)(t, np.array(weights)) for t in target_range)
     sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_results)
-    obj_sd,obj_weight = zip(*minimized_results_full)
+    obj_sd,obj_weight = zip(*minimized_results)
     sharpe, vol = zip(*sharpe_results)
     return obj_sd, sharpe, obj_weight
 
 def minimum_variance_actives(target_range,weights):
     minimized_results = Parallel(n_jobs=-1)(delayed(simple_minimize_for_target)(t, np.array(weights)) for t in target_range)
     sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_results)
-    obj_sd,obj_weight = zip(*minimized_results_full)
+    obj_sd,obj_weight = zip(*minimized_results)
     sharpe, vol = zip(*sharpe_results)
     return obj_sd, sharpe, obj_weight
 
@@ -447,7 +449,7 @@ def create_frontier_graph(obj_sds, obj_weight, target, sharpe, title):
                     )) 
     # Add a table for Optimal Portfolio Composition
     optimal_portfolio_table = go.Figure(data=[go.Table(
-        header=dict(values=['Security', 'Weight (%)'],
+        header=dict(values=['Ticker', 'Weight (%)'],
                     fill_color='#8F001A',
                     align='left',
                     font=dict(color='white', size=14),
@@ -565,11 +567,12 @@ histogram.update_layout(
     yaxis=dict(showline=True, linewidth=2, linecolor='#8F001A', showgrid=False, zeroline=False),
 )
 
-# Display Graphs
-# Build a Dash app with tabs to separate the graphs
+# Display Dashboard
+
 app = dash.Dash(__name__)
 
 app.layout = html.Div([
+    html.H1('Portfolio Optimization Dashboard', style={'textAlign': 'center', 'color': '#8F001A', 'font-family': 'Tahoma','backgroundColor': 'WhiteSmoke'}), 
     dcc.Tabs([
         dcc.Tab(label='Efficient Frontier', children=[
             html.Div([
@@ -585,11 +588,19 @@ app.layout = html.Div([
                             "placement": "bottom", 
                             "always_visible": True,
                             "style": {'font-family': 'Tahoma', 'color': 'white'},
-                            "template": '{value}%'
+                            "template": 'Max Target Return{value}%'
                         },
                     ),
-                    dcc.Graph(id='frontiergraph_actives', style={'width': '100%', 'margin': '0 auto'}),
-                    dcc.Graph(id='table_actives', style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'}),
+                    dcc.Loading(
+                        id="loading-frontiergraph_actives",
+                        type="circle",
+                        children=dcc.Graph(id='frontiergraph_actives', style={'width': '100%', 'margin': '0 auto'})
+                    ),
+                    dcc.Loading(
+                        id="loading-table_actives",
+                        type="circle",
+                        children=dcc.Graph(id='table_actives', style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'})
+                    ),
                 ], style={'width': '33%', 'display': 'inline-block', 'verticalAlign': 'top','backgroundColor': 'WhiteSmoke'}),
                 
                 html.Div([
@@ -607,8 +618,16 @@ app.layout = html.Div([
                             "template": '{value}%'
                         }, 
                     ),
-                    dcc.Graph(id='frontiergraph_etfs', style={'width': '100%', 'margin': '0 auto'}),
-                    dcc.Graph(id='table_etfs', style={'width': '100%', 'margin': '0 auto'}),
+                    dcc.Loading(
+                        id="loading-frontiergraph_etfs",
+                        type="circle",
+                        children=dcc.Graph(id='frontiergraph_etfs', style={'width': '100%', 'margin': '0 auto'})
+                    ),
+                    dcc.Loading(
+                        id="loading-table_etfs",
+                        type="circle",
+                        children=dcc.Graph(id='table_etfs', style={'width': '100%', 'margin': '0 auto'})
+                    ),
                 ], style={'width': '33%', 'display': 'inline-block', 'verticalAlign': 'top','backgroundColor': 'WhiteSmoke'}),
                 html.Div([
                     dcc.Slider(
@@ -625,16 +644,24 @@ app.layout = html.Div([
                             "template": '{value}%'
                         },
                     ),
-                    dcc.Graph(id='frontiergraph_full', style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'}),
-                    dcc.Graph(id='table_full', style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'}),
+                    dcc.Loading(
+                        id="loading-frontiergraph_full",
+                        type="circle",
+                        children=dcc.Graph(id='frontiergraph_full', style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'})
+                    ),
+                    dcc.Loading(
+                        id="loading-table_full",
+                        type="circle",
+                        children=dcc.Graph(id='table_full', style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'})
+                    ),
                 ], style={'width': '33%', 'display': 'inline-block', 'verticalAlign': 'top'}),
             ], style={'display': 'flex', 'justify-content': 'space-between', 'align-items': 'flex-start','backgroundColor': 'WhiteSmoke'}),
         ]),
         
         dcc.Tab(label='Securities List', children=[
-            dcc.Graph(figure=securities_list)
+            dcc.Graph(figure=securities_list, layout={'height': 'auto'}, style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'}),
         ]),
-        dcc.Tab(label='Performance Holdings', children=[
+        dcc.Tab(label='Performance of Holdings', children=[
             html.Div([
                 dcc.Dropdown(
                     id='sector_selector',
@@ -665,13 +692,11 @@ app.layout = html.Div([
                 dcc.Graph(figure=Return_Vol_graph,style={'width': '100%', 'margin': '0 auto',})
             ], style={'textAlign': 'center', 'margin-bottom': '20px', 'backgroundColor': 'WhiteSmoke', 'font-family': 'Tahoma'}),
         ]),
-        dcc.Tab(label='Histogram of Daily Returns', children=[
-            dcc.Graph(figure=histogram)
+        dcc.Tab(label='Portfolio Statistics', children=[
+            dcc.Graph(figure=histogram),
+            dcc.Graph(figure=corr_matrix_graph, style={'width': '100%', 'margin': '0 auto',})
         ]),
-        dcc.Tab(label='Correlation of Portfolio Stocks', children=[
-            dcc.Graph(figure=corr_matrix_graph, style={'width': '100%', 'margin': '0 auto'})
-        ]),
-    ], style={'font-family': 'Tahoma'})
+    ], style={'font-family': 'Tahoma', 'color': '#8F001A', 'backgroundColor': 'WhiteSmoke'}),
 ])
 
 # Price Charts
@@ -757,8 +782,8 @@ def update_full(full_slider):
 )
 def update_active(active_slider):
     target =  np.linspace(start=10, stop=active_slider, num=100)
-    obj_sd, sharpe, obj_weight = minimum_variance_actives(target, Actives_Weights)
-    frontiergraph_actives, table_actives = create_frontier_graph(obj_sd, obj_weight,target, sharpe, '<i><b>Efficient Frontier (Active Positions)</b></i>')
+    obj_sd, sharpe, obj_weight_act = minimum_variance_actives(target, Actives_Weights)
+    frontiergraph_actives, table_actives = create_frontier_graph(obj_sd, obj_weight_act,target, sharpe, '<i><b>Efficient Frontier (Active Positions)</b></i>')
     return frontiergraph_actives, table_actives
 
 @app.callback(
