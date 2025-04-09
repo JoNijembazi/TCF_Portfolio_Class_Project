@@ -1,3 +1,6 @@
+# Ensure the required packages are installed by running the following command in your terminal:
+# pip install pandas, numpy, plotly, yfinance, dash, joblib, scipy, openpyxl, nbformat
+
 # import the necessary packages
 import pandas as pd
 import numpy as np
@@ -19,7 +22,6 @@ from dash.dependencies import Input, Output
 
 # Import Data
 
-##  REMEMBER TO CHANGE THIS URL TO THE NEW ONE LATER
 url = 'https://raw.githubusercontent.com/JoNijembazi/TCF-Portfolio/main/PRTU.xlsx'
 Stock_Master_list = pd.read_excel(url, engine='openpyxl')
 
@@ -110,7 +112,7 @@ for x,y in zip(eq_list,Stock_Master_list['Security'].iloc[:-2]):
 
     except:
         continue
-
+# Map Sector Codes and
 sector_codes = {'realestate': 'Real Estate', 
                 'consumer_cyclical': 'Consumer Cyclical', 
                 'basic_materials': 'Basic Materials', 
@@ -237,7 +239,7 @@ Actives_Weights = np.array(Actives_Weights)
 # Create constraints
     # Define the constraints & Return function
 
-        # Sector Constraints
+        # Sector, Country and Type Constraints
 IPS_Sector_constraint = {'Communication Services': (0, 0.165),
                       'Consumer Discretionary': (0, 0.173), 
                       'Consumer Staples': (0, 0.154), 
@@ -349,43 +351,9 @@ def full_minimize_for_target(target, initial_w):
     )
     return min_result_object['fun']*100, min_result_object['x']*100
 
-# MINIMIZE
-minimized_results = Parallel(n_jobs=-1)(delayed(simple_minimize_for_target)(t, np.array(Actives_Weights)) for t in target)
-obj_sd, obj_weight = zip(*minimized_results)
-
-sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_results)
-    # Extract the results
-sharpe,vol = zip(*sharpe_results)
-
-port_returns_actives = pd.DataFrame(np.array([portfolio_ann_return(i) for i in obj_weight]))
-# Combine the weights and names of Active Weights securities
-active_weights_returned = pd.DataFrame(obj_weight)
-active_weights_returned.columns = Stock_Master_list['Security'].iloc[:-2].values
-# Minimize function for etfs securities, all constraints
-
-minimized_results_etfs = Parallel(n_jobs=-1)(delayed(etf_minimize_for_target)(t, np.array(ETF_Weights)) for t in target)
-sharpe_results_etfs = Parallel(n_jobs=-1)(delayed(sharpe_ratio)((sd, weights)) for sd, weights in minimized_results_etfs)
-    # Extract the results
-obj_sd_etfs,obj_weight_etfs = zip(*minimized_results_etfs)
-sharpe_etfs, vol_etfs = zip(*sharpe_results_etfs)
-
-etf_weights_returned = pd.DataFrame(obj_weight_etfs)
-etf_weights_returned.columns = Stock_Master_list['Security'].iloc[:-2].values
-
-# Minimize function for all securities, all constraints
-
-minimized_results_full = Parallel(n_jobs=-1)(delayed(full_minimize_for_target)(t, np.array(portfolio_weights)) for t in target)
-sharpe_results_full = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_results_full)
-    # Extract the results
-obj_sd_full,obj_weight_full = zip(*minimized_results_full)
-sharpe_full, vol_full = zip(*sharpe_results_full)
-
-full_weights_returned = pd.DataFrame(obj_weight_full)
-full_weights_returned.columns = Stock_Master_list['Security'].iloc[:-2].values
-
 def minimum_variance_full(target_range,weights):
     minimized_results = Parallel(n_jobs=-1)(delayed(full_minimize_for_target)(t, np.array(weights)) for t in target_range)
-    sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_results_full)
+    sharpe_results = Parallel(n_jobs=-1)(delayed(sharpe_ratio)(i)for i in minimized_results)
     obj_sd_full,obj_weight = zip(*minimized_results)
     sharpe, vol = zip(*sharpe_results)
     return obj_sd_full, sharpe, obj_weight
@@ -407,6 +375,7 @@ def minimum_variance_actives(target_range,weights):
 # ------------------
 
 # Graph & Table Section
+    # Create Frontier Graphs
 
 def create_frontier_graph(obj_sds, obj_weight, target, sharpe, title):
     frontiergraph = go.Figure()
@@ -469,7 +438,6 @@ def create_frontier_graph(obj_sds, obj_weight, target, sharpe, title):
     
     return frontiergraph, optimal_portfolio_table
 
-# Create graphs for different portfolios
 
 # ------------------
 
@@ -547,7 +515,6 @@ for stock in daily_returns.columns:
         opacity=0.75,
         nbinsx=50  # Increase the number of bins
     ))
-
 
 
 histogram.update_layout(
@@ -738,6 +705,8 @@ def PortfolioStats(Mr, weights=weights,annualized_returns=annualized_returns, ri
                               font=dict(color='#8F001A'),
                               title_font=dict(size=20, color='#8F001A'))
     return stats_table
+
+
 
 # Display Dashboard
 
