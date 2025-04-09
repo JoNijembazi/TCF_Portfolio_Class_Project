@@ -20,151 +20,157 @@ from dash import dcc, html
 from dash.dependencies import Input, Output
 
 
+app = dash.Dash(__name__)
+
 # Import Data
+def Data_Gather():
+    url = 'https://raw.githubusercontent.com/JoNijembazi/TCF-Portfolio/main/PRTU.xlsx'
+    Stock_Master_list = pd.read_excel(url, engine='openpyxl')
 
-url = 'https://raw.githubusercontent.com/JoNijembazi/TCF-Portfolio/main/PRTU.xlsx'
-Stock_Master_list = pd.read_excel(url, engine='openpyxl')
-
-# Clean Data
-    # Drop rows with missing values
-Stock_Master_list.columns = Stock_Master_list.iloc[8]
-
-Stock_Master_list = Stock_Master_list[Stock_Master_list.columns[[0,2,3,11,12]]]
-Stock_Master_list.drop(range(12),inplace=True)
-Stock_Master_list.dropna(axis=0,how='all',inplace=True)
-Stock_Master_list.reset_index(drop=True,inplace=True)
+    # Clean Data
+        # Drop rows with missing values
+    Stock_Master_list.columns = Stock_Master_list.iloc[8]
+    Stock_Master_list = Stock_Master_list[Stock_Master_list.columns[[0,2,3,11,12]]]
+    Stock_Master_list.drop(range(12),inplace=True)
+    Stock_Master_list.dropna(axis=0,how='all',inplace=True)
+    Stock_Master_list.reset_index(drop=True,inplace=True)
 
 
-    # Regions
-Stock_Master_list['Country'] = 'n.a'
+        # Regions
+    Stock_Master_list['Country'] = 'n.a'
 
-for i in range(len(Stock_Master_list[:-2])):
-    if 'US' in Stock_Master_list['Security'][i]:
-        Stock_Master_list.loc[i,'Country'] = 'United States'
-    else:
-        Stock_Master_list.loc[i,'Country'] = 'Canada'
+    for i in range(len(Stock_Master_list[:-2])):
+        if 'US' in Stock_Master_list['Security'][i]:
+            Stock_Master_list.loc[i,'Country'] = 'United States'
+        else:
+            Stock_Master_list.loc[i,'Country'] = 'Canada'
 
-# Portfolio Analysis
-    # Prepare Equity List
-eq_list = Stock_Master_list['Security'].iloc[:-2].tolist()
-eq_list = [x.replace('-U CN','-UN.TO') for x in eq_list]
-eq_list = [x.replace(' CN','.TO') for x in eq_list]
-eq_list = [x.replace(' US','') for x in eq_list]
+    # Portfolio Analysis
+        # Prepare Equity List
+    eq_list = Stock_Master_list['Security'].iloc[:-2].tolist()
+    eq_list = [x.replace('-U CN','-UN.TO') for x in eq_list]
+    eq_list = [x.replace(' CN','.TO') for x in eq_list]
+    eq_list = [x.replace(' US','') for x in eq_list]
 
-    # Download finance data
-df = pd.DataFrame()
-final_eq_list = []
-for x in eq_list:  
-    try:
-        # Check if the ticker is valid
-        yf.Ticker(x).info['exchange']
-
-        # download the stock data
-        stock = yf.download(x, period='5y', interval='1d',repair=True,progress=False)['Close'];
-        df = pd.concat([df,stock],axis=1)
-
-    except Exception as e:
+        # Download finance data
+    df = pd.DataFrame()
+    final_eq_list = []
+    for x in eq_list:  
         try:
-            # Check if the ticker is valid 
-            yf.Ticker(x.replace('.TO','.V')).info['exchange']    
+            # Check if the ticker is valid
+            yf.Ticker(x).info['exchange']
 
-            # Download the stock data
-            stock = yf.download(x.replace('.TO','.V'), period='5y', interval='1d',repair=True,progress=False)['Close'];
+            # download the stock data
+            stock = yf.download(x, period='5y', interval='1d',repair=True,progress=False)['Close'];
             df = pd.concat([df,stock],axis=1)
+
         except Exception as e:
-            print(f'Error ticker {x} may be incorrect or delisted')
-            df[x] = np.nan
-    
-    # Remove missing/delisted stocks
-eq_list = df.columns[~df.isna().all()]  
-df.columns = Stock_Master_list['Security'].iloc[:-2].tolist()
-drop_cols = df.columns[df.isna().all()]
-df.drop(drop_cols,axis=1,inplace=True)
-Stock_Master_list = Stock_Master_list[~Stock_Master_list['Security'].isin(drop_cols)]
+            try:
+                # Check if the ticker is valid 
+                yf.Ticker(x.replace('.TO','.V')).info['exchange']    
 
-
-    # Add Descriptive Data
-Stock_Master_list[['Sector','Trailing P/E','1Y Forward P/E','Consensus Target','Beta']] = 'n.a'
-Stock_Master_list['Type'] = 'Cash'
-for x,y in zip(eq_list,Stock_Master_list['Security'].iloc[:-2]):        
-    try:
-        # Check type 
-        ticker_info = yf.Ticker(x).info
-        Stock_Master_list.loc[Stock_Master_list['Security']==y,'Type'] = 'Stock'
-        try:
-            etf_sector = pd.Series(yf.Ticker(x).funds_data.sector_weightings).idxmax()
-            etf_beta = ticker_info['beta3Year']
-            Stock_Master_list.loc[Stock_Master_list['Security']==y,'Type'] = 'ETF'
-        except:
-            pass 
-        # Sector
-        Stock_Master_list.loc[Stock_Master_list['Security']==y,'Sector'] = ticker_info.get('sectorDisp', etf_sector)
-        Stock_Master_list.loc[Stock_Master_list['Security']==y,'Sector']
-        # Price to Earnings
-        Stock_Master_list.loc[Stock_Master_list['Security']==y,'Trailing P/E'] = ticker_info.get('trailingPE', 'n.a')
-        Stock_Master_list.loc[Stock_Master_list['Security']==y,'1Y Forward P/E'] = ticker_info.get('forwardPE', 'n.a')
+                # Download the stock data
+                stock = yf.download(x.replace('.TO','.V'), period='5y', interval='1d',repair=True,progress=False)['Close'];
+                df = pd.concat([df,stock],axis=1)
+            except Exception as e:
+                print(f'Error ticker {x} may be incorrect or delisted')
+                df[x] = np.nan
         
-        # Consensus Target
-        Stock_Master_list.loc[Stock_Master_list['Security']==y,'Consensus Target'] = ticker_info.get('targetMeanPrice', 'n.a')
+        # Remove missing/delisted stocks
+    eq_list = df.columns[~df.isna().all()]  
+    df.columns = Stock_Master_list['Security'].iloc[:-2].tolist()
+    drop_cols = df.columns[df.isna().all()]
+    df.drop(drop_cols,axis=1,inplace=True)
+    Stock_Master_list = Stock_Master_list[~Stock_Master_list['Security'].isin(drop_cols)]
 
-        # Beta
-        Stock_Master_list.loc[Stock_Master_list['Security']==y,'Beta'] = ticker_info.get('beta', etf_beta)
 
-    except:
-        continue
-# Map Sector Codes and
-sector_codes = {'realestate': 'Real Estate', 
-                'consumer_cyclical': 'Consumer Cyclical', 
-                'basic_materials': 'Basic Materials', 
-                'consumer_defensive': 'Consumer Defensive', 
-                'technology': 'Technology', 
-                'communication_services': 'Communication Services', 
-                'financial_services': 'Financial Services', 
-                'utilities': 'Utilities', 
-                'industrials': 'Industrials', 
-                'energy': 'Energy', 
-                'healthcare': 'Healthcare'}
+        # Add Descriptive Data
+    Stock_Master_list[['Sector','Trailing P/E','1Y Forward P/E','Consensus Target','Beta']] = 'n.a'
+    Stock_Master_list['Type'] = 'Cash'
+    for x,y in zip(eq_list,Stock_Master_list['Security'].iloc[:-2]):        
+        try:
+            # Check type 
+            ticker_info = yf.Ticker(x).info
+            Stock_Master_list.loc[Stock_Master_list['Security']==y,'Type'] = 'Stock'
+            try:
+                etf_sector = pd.Series(yf.Ticker(x).funds_data.sector_weightings).idxmax()
+                etf_beta = ticker_info['beta3Year']
+                Stock_Master_list.loc[Stock_Master_list['Security']==y,'Type'] = 'ETF'
+            except:
+                pass 
+            # Sector
+            Stock_Master_list.loc[Stock_Master_list['Security']==y,'Sector'] = ticker_info.get('sectorDisp', etf_sector)
+            Stock_Master_list.loc[Stock_Master_list['Security']==y,'Sector']
+            # Price to Earnings
+            Stock_Master_list.loc[Stock_Master_list['Security']==y,'Trailing P/E'] = ticker_info.get('trailingPE', 'n.a')
+            Stock_Master_list.loc[Stock_Master_list['Security']==y,'1Y Forward P/E'] = ticker_info.get('forwardPE', 'n.a')
+            
+            # Consensus Target
+            Stock_Master_list.loc[Stock_Master_list['Security']==y,'Consensus Target'] = ticker_info.get('targetMeanPrice', 'n.a')
 
-normalized_codes = { 
-                'Consumer Cyclical': 'Consumer Discretionary', 
-                'Basic Materials': 'Materials', 
-                'Consumer Defensive': 'Consumer Staples', 
-                'Technology': 'Information Technology', 
-                }
+            # Beta
+            Stock_Master_list.loc[Stock_Master_list['Security']==y,'Beta'] = ticker_info.get('beta', etf_beta)
 
-for i in sector_codes.keys():
-    Stock_Master_list.loc[Stock_Master_list['Sector']==i,'Sector'] = sector_codes[i]
+        except:
+            continue
+    # Map Sector Codes and
+    sector_codes = {'realestate': 'Real Estate', 
+                    'consumer_cyclical': 'Consumer Cyclical', 
+                    'basic_materials': 'Basic Materials', 
+                    'consumer_defensive': 'Consumer Defensive', 
+                    'technology': 'Technology', 
+                    'communication_services': 'Communication Services', 
+                    'financial_services': 'Financial Services', 
+                    'utilities': 'Utilities', 
+                    'industrials': 'Industrials', 
+                    'energy': 'Energy', 
+                    'healthcare': 'Healthcare'}
 
-for i in normalized_codes.keys():
-    Stock_Master_list.loc[Stock_Master_list['Sector']==i,'Sector'] = normalized_codes[i]
+    normalized_codes = { 
+                    'Consumer Cyclical': 'Consumer Discretionary', 
+                    'Basic Materials': 'Materials', 
+                    'Consumer Defensive': 'Consumer Staples', 
+                    'Technology': 'Information Technology', 
+                    }
 
-# Quantitative Data
-        # # Last Price
-last_price = df.apply(lambda x: x.dropna().iloc[-1] if not x.dropna().empty else np.nan)
-Stock_Master_list['Price'] = last_price.reindex(Stock_Master_list['Security'],fill_value=0).values    
+    for i in sector_codes.keys():
+        Stock_Master_list.loc[Stock_Master_list['Sector']==i,'Sector'] = sector_codes[i]
 
-        # # Add USD/CAD
-usd_cad = yf.Ticker('USDCAD=X').info['regularMarketPrice']    
-Stock_Master_list.loc[Stock_Master_list['Security']=='USD','Price'] = usd_cad
+    for i in normalized_codes.keys():
+        Stock_Master_list.loc[Stock_Master_list['Sector']==i,'Sector'] = normalized_codes[i]
 
-        # # Market Value CAD and no CAD
-Stock_Master_list['Market Value'] = Stock_Master_list['Price'] * Stock_Master_list['Position']     
-Stock_Master_list['Market Value (CAD)'] = Stock_Master_list['Market Value']
+    # Quantitative Data
+            # # Last Price
+    last_price = df.apply(lambda x: x.dropna().iloc[-1] if not x.dropna().empty else np.nan)
+    Stock_Master_list['Price'] = last_price.reindex(Stock_Master_list['Security'],fill_value=0).values    
 
-for i in Stock_Master_list.index:
-    if Stock_Master_list.loc[i, 'Country'] == 'United States':
-        Stock_Master_list.loc[i, 'Market Value (CAD)'] = Stock_Master_list.loc[i, 'Price'] * Stock_Master_list.loc[i, 'Position'] * usd_cad 
-    if Stock_Master_list.loc[i, 'Security'] == 'CAD':
-        Stock_Master_list.loc[i, 'Market Value'] = Stock_Master_list.loc[i, 'Position'] * 1000
-        Stock_Master_list.loc[i, 'Market Value (CAD)'] = Stock_Master_list.loc[i, 'Position'] * 1000
-    if Stock_Master_list.loc[i, 'Security'] == 'USD':
-        Stock_Master_list.loc[i, 'Market Value'] = Stock_Master_list.loc[i, 'Position'] * 1000
-        Stock_Master_list.loc[i, 'Market Value (CAD)'] = Stock_Master_list.loc[i, 'Market Value'] * usd_cad
-    else:
-        continue 
+            # # Add USD/CAD
+    usd_cad = yf.Ticker('USDCAD=X').info['regularMarketPrice']    
+    Stock_Master_list.loc[Stock_Master_list['Security']=='USD','Price'] = usd_cad
 
-        # # Weight
-Stock_Master_list['Weight'] = Stock_Master_list['Market Value (CAD)'] / Stock_Master_list['Market Value (CAD)'].sum()
+            # # Market Value CAD and no CAD
+    Stock_Master_list['Market Value'] = Stock_Master_list['Price'] * Stock_Master_list['Position']     
+    Stock_Master_list['Market Value (CAD)'] = Stock_Master_list['Market Value']
+
+    for i in Stock_Master_list.index:
+        if Stock_Master_list.loc[i, 'Country'] == 'United States':
+            Stock_Master_list.loc[i, 'Market Value (CAD)'] = Stock_Master_list.loc[i, 'Price'] * Stock_Master_list.loc[i, 'Position'] * usd_cad 
+        if Stock_Master_list.loc[i, 'Security'] == 'CAD':
+            Stock_Master_list.loc[i, 'Market Value'] = Stock_Master_list.loc[i, 'Position'] * 1000
+            Stock_Master_list.loc[i, 'Market Value (CAD)'] = Stock_Master_list.loc[i, 'Position'] * 1000
+        if Stock_Master_list.loc[i, 'Security'] == 'USD':
+            Stock_Master_list.loc[i, 'Market Value'] = Stock_Master_list.loc[i, 'Position'] * 1000
+            Stock_Master_list.loc[i, 'Market Value (CAD)'] = Stock_Master_list.loc[i, 'Market Value'] * usd_cad
+        else:
+            continue 
+
+            # # Weight
+    Stock_Master_list['Weight'] = Stock_Master_list['Market Value (CAD)'] / Stock_Master_list['Market Value (CAD)'].sum()
+    return Stock_Master_list, df
+
+#Data Tables & Lists (Loop to ensure data is collected)
+for i in range(3):
+    Stock_Master_list, df = Data_Gather()
 
 
 risk_free_rate = yf.download('^TNX',period='1d',progress=False)['Close'].iloc[-1] / 100
@@ -489,12 +495,14 @@ securities_list = go.Figure(data=[go.Table(
                 fill_color='#8F001A',
                 align='left',
                 font=dict(color='white', size=14),
-                line_color='white'),
+                line_color='white',
+                height=30),
     cells=dict(values=[Stock_Master_list[col].apply(lambda x: f'{x:.2f}' if isinstance(x, (int, float)) else x) for col in Stock_Master_list.columns],
                fill_color='white',
                align='left',
                font=dict(color='black', size=12),
-               line_color='white'),
+               line_color='white',
+               height=20),
                )  # Adjust the height of the cells
 ])
 
@@ -706,11 +714,7 @@ def PortfolioStats(Mr, weights=weights,annualized_returns=annualized_returns, ri
                               title_font=dict(size=20, color='#8F001A'))
     return stats_table
 
-
-
 # Display Dashboard
-
-app = dash.Dash(__name__)
 
 app.layout = html.Div([
     html.H1('Portfolio Optimization Dashboard', 
@@ -813,7 +817,7 @@ app.layout = html.Div([
         ]),
         
         dcc.Tab(label='Securities List', children=[
-            dcc.Graph(figure=securities_list, style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'}),
+            dcc.Graph(figure=securities_list, style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A','height':'100%'}),
         ]),
         
         dcc.Tab(label='Performance of Holdings', children=[
@@ -821,7 +825,7 @@ app.layout = html.Div([
                 dcc.Dropdown(
                     id='sector_selector',
                     options=[{'label': sector, 'value': sector} for sector in Stock_Master_list['Sector'].unique()],
-                    value=Stock_Master_list['Sector'].unique()[0],
+                    value=Stock_Master_list['Sector'].unique()[5],
                     clearable=False,
                     style={
                         'width': '50%',
@@ -947,7 +951,7 @@ app.layout = html.Div([
                Output('Price_chart_stock','figure'),
                Input('sector_selector', 'value'),
                Input('stock_selector', 'value'),
-               prevent_initial_call=True
+               prevent_initial_call=False
                )
 def update_graphs(sector_selector, stock_selector):
     # 1. Chart Sector performance
