@@ -1,5 +1,6 @@
 # Ensure the required packages are installed by running the following command in your terminal:
-# pip install pandas, numpy, plotly, yfinance, dash, joblib, scipy, openpyxl, nbformat
+# pip install pandas, numpy, plotly, yfinance, dash, joblib, scipy, openpyxl, nbformat+
+
 
 # import the necessary packages
 import pandas as pd
@@ -211,7 +212,6 @@ daily_portfolio_returns = daily_returns.dot(weights.T)
     
 
 # Asset Weights
-
     
     # Sector Weights
 GICs = Stock_Master_list['Sector'].iloc[:-2].unique()
@@ -946,7 +946,9 @@ app.layout = html.Div([
     ], style={'font-family': 'Tahoma', 'color': '#8F001A', 'backgroundColor': 'WhiteSmoke'}),
 ])
 
-# Price Charts
+
+# Refresh/Callbacks
+## Price Charts
 @app.callback( Output('Price_chart_Sec','figure'),
                Output('Price_chart_stock','figure'),
                Input('sector_selector', 'value'),
