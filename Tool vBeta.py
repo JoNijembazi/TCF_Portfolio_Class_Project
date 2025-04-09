@@ -91,16 +91,17 @@ def Data_Gather():
         try:
             # Check type 
             ticker_info = yf.Ticker(x).info
+            etf_sector = 'n.a'
             Stock_Master_list.loc[Stock_Master_list['Security']==y,'Type'] = 'Stock'
             try:
                 etf_sector = pd.Series(yf.Ticker(x).funds_data.sector_weightings).idxmax()
                 etf_beta = ticker_info['beta3Year']
                 Stock_Master_list.loc[Stock_Master_list['Security']==y,'Type'] = 'ETF'
-            except:
+            except Exception:
+                etf_beta = 'n.a'
                 pass 
             # Sector
             Stock_Master_list.loc[Stock_Master_list['Security']==y,'Sector'] = ticker_info.get('sectorDisp', etf_sector)
-            Stock_Master_list.loc[Stock_Master_list['Security']==y,'Sector']
             # Price to Earnings
             Stock_Master_list.loc[Stock_Master_list['Security']==y,'Trailing P/E'] = ticker_info.get('trailingPE', 'n.a')
             Stock_Master_list.loc[Stock_Master_list['Security']==y,'1Y Forward P/E'] = ticker_info.get('forwardPE', 'n.a')
@@ -110,8 +111,7 @@ def Data_Gather():
 
             # Beta
             Stock_Master_list.loc[Stock_Master_list['Security']==y,'Beta'] = ticker_info.get('beta', etf_beta)
-
-        except:
+        except Exception as e:
             continue
     # Map Sector Codes and
     sector_codes = {'realestate': 'Real Estate', 
@@ -169,8 +169,8 @@ def Data_Gather():
     return Stock_Master_list, df
 
 #Data Tables & Lists (Loop to ensure data is collected)
-for i in range(3):
-    Stock_Master_list, df = Data_Gather()
+
+Stock_Master_list, df = Data_Gather()
 
 
 risk_free_rate = yf.download('^TNX',period='1d',progress=False)['Close'].iloc[-1] / 100
@@ -1016,7 +1016,7 @@ def update_graphs(sector_selector, stock_selector):
     Output('frontiergraph_full', 'figure'),
     Output('table_full', 'figure'),
     Input('full_slider','value'),
-    prevent_initial_call=True
+    prevent_initial_call=False
     )
 def update_full(full_slider):
     target =  np.linspace(start=10, stop=full_slider, num=100)
@@ -1028,7 +1028,7 @@ def update_full(full_slider):
     Output('frontiergraph_actives', 'figure'),
     Output('table_actives', 'figure'),
     Input('active_slider','value'),
-    prevent_initial_call=True
+    prevent_initial_call=False
 )
 def update_active(active_slider):
     target =  np.linspace(start=10, stop=active_slider, num=100)
@@ -1040,7 +1040,7 @@ def update_active(active_slider):
     Output('frontiergraph_etfs', 'figure'),
     Output('table_etfs', 'figure'),
     Input('etf_slider','value'),
-    prevent_initial_call=True
+    prevent_initial_call=False
 )
 def update_etf(etf_slider):
         target =  np.linspace(start=10, stop=etf_slider, num=100)
@@ -1053,7 +1053,7 @@ def update_etf(etf_slider):
     Output('VaR_PDF', 'figure'),
     Input('sim_number', 'value'),
     Input('confidence_level', 'value'),
-    prevent_initial_call=True
+    prevent_initial_call=False
 )
 def update_montecarlo(sim_number,confidence_level):
     number_of_simulations = sim_number
@@ -1064,7 +1064,7 @@ def update_montecarlo(sim_number,confidence_level):
 @app.callback(
     Output('stats_table', 'figure'),
     Input('Expected_Market_Return', 'value'),
-    prevent_initial_call=True
+    prevent_initial_call=False
 )
 def update_stats(Expected_Return):
     Mr = float(Expected_Return) # Ensure the value is converted to float
@@ -1074,3 +1074,4 @@ def update_stats(Expected_Return):
 
 if __name__ == '__main__':
     app.run(debug=True,port=8051)
+
