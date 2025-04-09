@@ -20,7 +20,7 @@ from dash.dependencies import Input, Output
 # Import Data
 
 ##  REMEMBER TO CHANGE THIS URL TO THE NEW ONE LATER
-url = 'https://raw.githubusercontent.com/JoNijembazi/TCF-Portfolio/main/TCF20250131.xlsx'
+url = 'https://raw.githubusercontent.com/JoNijembazi/TCF-Portfolio/main/PRTU.xlsx'
 Stock_Master_list = pd.read_excel(url, engine='openpyxl')
 
 # Clean Data
@@ -496,7 +496,7 @@ Return_Vol_graph.update_layout(title='<i><b>TCF Holdings Return to Volatility</b
                   xaxis_title='Annualized Volatility(%)',
                   yaxis_title='Annualized Returns(%)',
                   plot_bgcolor='white',
-                  paper_bgcolor='white',
+                  paper_bgcolor='WhiteSmoke',
                   font=dict(color='#8F001A'),
                   hovermode='closest',
                   hoverlabel=dict(
@@ -639,7 +639,7 @@ def MonteCarloSim(number_of_simulations, level):
     )
 
 
-    MonteCarlo.update_layout(title = 'Monter Carlo Simulated Portfolio Returns',
+    MonteCarlo.update_layout(title = '<i><b>Monte Carlo Simulated Portfolio Returns</b></i>',
                       hovermode ='closest',
                       plot_bgcolor='white',
                       paper_bgcolor='WhiteSmoke',
@@ -670,13 +670,13 @@ def MonteCarloSim(number_of_simulations, level):
                       line_width=1, 
                       line_dash='dash', 
                       name='VaR',
-                      annotation=dict(text=f"VaR: {VaR_variance_covariance:.2f}%" +
-                                      f"<br>Confidence Level: {confidence_level}%", 
+                      annotation=dict(text=f"VaR: {VaR_variance_covariance*100:.2f}%" +
+                                      f"<br>Confidence Level: {confidence_level*100}%", 
                                       showarrow=True, arrowhead=2, ax=0, ay=-40))
    
 
-    VaR_PDF.update_layout(xaxis_title='Portfolio of Returns (%)',
-                      yaxis_title='Density of Returns (%)',
+    VaR_PDF.update_layout(xaxis_title='Portfolio Return Distribution (%)',
+                      yaxis_title='Density of Returns',
                       
                       # This graph represents the normal distribution of portfolio returns, 
                       # highlighting the Value at Risk (VaR) at a specified confidence level. 
@@ -704,48 +704,39 @@ def PortfolioStats(Mr, weights=weights,annualized_returns=annualized_returns, ri
     portfolio_volatility = np.sqrt(np.dot(weights, np.dot(cov_matrix.values, weights)))  # Portfolio volatility
     portfolio_beta = np.sum(weights * Stock_Master_list['Beta'].iloc[:-2].astype(float))  # Combined portfolio beta
     
-
     # Sharpe Ratio
     
-    sharpe_ratio = float(portfolio_return - risk_free_rate * 100) / (portfolio_volatility*100)
+    sharpe_ratio = (portfolio_return - risk_free_rate * 100) / (portfolio_volatility*100)
     # Treynor Ratio
 
-    treynor_ratio = float(portfolio_return - risk_free_rate * 100) / portfolio_beta
+    treynor_ratio = (portfolio_return - risk_free_rate * 100) / portfolio_beta
     # CAPM Alpha
     market_return = Mr
-    alpha = float(portfolio_return - (risk_free_rate * 100 + portfolio_beta * (market_return - risk_free_rate * 100)))
+    alpha = portfolio_return - (risk_free_rate * 100 + portfolio_beta * (market_return - risk_free_rate * 100))
     
     # Combined Beta
     combined_beta = portfolio_beta
     # Create a modern table to display the portfolio statistics
-    # Ensure metrics are defined and valid
-    sharpe_ratio = sharpe_ratio if 'sharpe_ratio' in locals() else 0
-    treynor_ratio = treynor_ratio if 'treynor_ratio' in locals() else 0
-    alpha = alpha if 'alpha' in locals() else 0
-    combined_beta = combined_beta if 'combined_beta' in locals() else 0
-
     stats_table = go.Figure(data=[go.Table(
         header=dict(values=['Metric', 'Value'],
                     fill_color='#8F001A',
                     align='center',
                     font=dict(color='white', size=14),
                     line_color='white'),
-        cells=dict(values=[
-            ['Sharpe Ratio', 'Treynor Ratio', 'CAPM Alpha', 'Combined Beta'],
-            [f'{sharpe_ratio:.2f}', f'{treynor_ratio:.2f}', f'{alpha:.2f}', f'{combined_beta:.2f}']
-        ],
+                    cells=dict(values=[
+                        ['Sharpe Ratio', 'Treynor Ratio','CAPM Alpha', 'Combined Beta'],
+                        [f'{float(sharpe_ratio.iloc[0]):.2f}', f'{float(treynor_ratio.iloc[0]):.2f}',f'{float(alpha.iloc[0]):.2f}' ,f'{combined_beta:.2f}']
+                    ],
         fill_color='white',
         align='left',
-        font=dict(color='black', size=12),
+        font=dict(color='black', size=14),
         line_color='white'),
     )])
-
     stats_table.update_layout(title='<i><b>Select Risk Portfolio Metrics</b></i>',
                               plot_bgcolor='white',
                               paper_bgcolor='WhiteSmoke',
                               font=dict(color='#8F001A'),
-                              title_font=dict(size=20, color='#8F001A'),
-                              height=200)  # Adjust the height of the table
+                              title_font=dict(size=20, color='#8F001A'))
     return stats_table
 
 # Display Dashboard
@@ -769,7 +760,7 @@ app.layout = html.Div([
                         id='active_slider',
                         min=10,
                         max=30,
-                        value=20,
+                        value=25,
                         marks=None,
                         step=0.1,
                         tooltip={
@@ -788,7 +779,7 @@ app.layout = html.Div([
                     dcc.Loading(
                         id="loading-table_actives",
                         type="default",
-                        overlay_style= {'visibility': 'visible', 'filter': 'blur(2px)'},
+                        overlay_style= {'visibility': 'visible', 'filter': 'blur(2px)'},    
                         children=dcc.Graph(id='table_actives', style={'width': '100%', 'margin': '0 auto', 'border-top': '0px solid #8F001A'})
                     ),
                 ], style={'width': '33%', 'display': 'inline-block', 'verticalAlign': 'top','backgroundColor': 'WhiteSmoke'}),
@@ -876,8 +867,8 @@ app.layout = html.Div([
                     value=Stock_Master_list['Security'].iloc[:-2][0],
                     clearable=False,
                     style={
-                        'width': '20%',
-                        'margin': '0 auto',
+                        'width': '50%',
+                        'margin-top': '0 auto',
                         'display': 'inline-block',
                         'font-family': 'Tahoma',
                     }
@@ -897,16 +888,9 @@ app.layout = html.Div([
                         'display': 'inline-block', 
                         'backgroundColor': 'WhiteSmoke', 
                         'margin-top': '0px',
-                        'margin-bottom': '0px'}),
-
-                html.H4('VaR Confidence Interval', 
-                        style={'textAlign': 'center', 
-                        'color': '#8F001A', 
-                        'font-family': 'Tahoma',
-                        'display': 'inline-block', 
-                        'backgroundColor': 'WhiteSmoke', 
-                        'margin-top': '0px',
-                        'margin-bottom': '0px'}),
+                        'font-size': '14px',
+                        'margin-bottom': '0px',
+                        'width': '25%'}),
 
                 dcc.Input(id='sim_number', 
                           type='number', 
@@ -914,21 +898,31 @@ app.layout = html.Div([
                           min=1, 
                           max=10000, 
                           step=1, 
-                          style={'width': '20%', 
+                          style={'width': '55%', 
                                  'margin': 'auto', 
                                  'display': 'inline-block', 
                                  'font-family': 'Tahoma',
                                  'font-size': '18px',
                                  'textAlign': 'center',
                                  }
-                        ),                        
+                        ),
+                html.H4('VaR Confidence Interval', 
+                        style={'textAlign': 'center', 
+                        'color': '#8F001A', 
+                        'font-family': 'Tahoma',
+                        'display': 'inline-block', 
+                        'backgroundColor': 'WhiteSmoke', 
+                        'margin-top': '0px',
+                        'font-size': '14px',
+                        'margin-bottom': '0px',
+                        'width': '25%'}),                                                
                 dcc.Dropdown(
                     id='confidence_level',
                     options=[{'label': f'{int(level*100)}%', 'value': level} for level in [0.90, 0.95, 0.99]],
                     value=0.95,
                     clearable=False,
                     style={
-                        'width': '50%',
+                        'width': '75%',
                         'margin': '0 auto',
                         'display': 'inline-block',
                         'font-family': 'Tahoma',
@@ -950,12 +944,6 @@ app.layout = html.Div([
                     )
             ], style={'textAlign': 'center', 'margin-bottom': '0px', 'backgroundColor': 'WhiteSmoke', 'font-family': 'Tahoma'}),
             html.Div([
-            dcc.Loading(
-                    id="loading-stats_table",
-                    type="default",
-                    overlay_style= {'visibility': 'visible', 'filter': 'blur(2px)'},
-                    children=dcc.Graph(id='stats_table', style={'width': '100%', 'margin': '0 auto',})
-                    ),
             dcc.Slider(
                     id='Expected_Market_Return',      
                     min=-25,
@@ -964,16 +952,23 @@ app.layout = html.Div([
                     marks=None,
                     step=0.1,
                     tooltip={
-                        "placement": "bottom", 
+                        "placement": "top", 
                         "always_visible": True,
                         "style": {'font-family': 'Tahoma', 'color': 'white'},
                         "template": 'Expected Market Return: {value}%'
-                    }),
-            dcc.Graph(figure=histogram,style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
-            
-            dcc.Graph(figure=corr_matrix_graph, style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
-
+                    },
+                    ),
+            dcc.Loading(
+                    id="loading-stats_table",
+                    type="default",
+                    overlay_style= {'visibility': 'visible', 'filter': 'blur(2px)'},
+                    children=dcc.Graph(id='stats_table', style={'width': '40%', 'margin': '0 auto','display':'inline-block', 'margin-bottom': '10px'})
+                    ),
             ],style={'textAlign': 'center', 'margin-bottom': '0 px', 'backgroundColor': 'WhiteSmoke', 'font-family': 'Tahoma'}),
+            html.Div([
+            dcc.Graph(figure=histogram,style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
+            dcc.Graph(figure=corr_matrix_graph, style={'width': '50%', 'margin': '0 auto', 'display': 'inline-block'}),
+            ],style={'textAlign': 'center', 'margin-bottom': '0 px', 'backgroundColor': 'WhiteSmoke', 'font-family': 'Tahoma'}), 
     ], style={'font-family': 'Tahoma', 'color': '#8F001A', 'backgroundColor': 'WhiteSmoke', 'margin-top': '0px'}),
     ], style={'font-family': 'Tahoma', 'color': '#8F001A', 'backgroundColor': 'WhiteSmoke'}),
 ])
